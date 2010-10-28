@@ -1,0 +1,722 @@
+# -*- mode: org; -*-
+* TODO cursors?
+  #+BEGIN_QUOTE
+  Because relational databases are oriented toward sets, no concept of
+  next row exists, meaning that you cannot operate on an individual
+  row in a set. Cursor functionality solves this problem by letting a
+  result set be processed one row at a time, similar to the way you
+  read and update a file on a disk. A DB-Library cursor indicates the
+  current position in a result set, just as the cursor on your screen
+  indicates the current position in a block of text.
+  #+END_QUOTE
+  
+  vs. browse mode:
+
+  #+BEGIN_QUOTE
+  Cursors let the user scroll through and update a result set with
+  fewer restrictions than browse mode.
+  #+END_QUOTE
+
+  not sure if freetds supports them, though; dblib:
+
+  #+BEGIN_QUOTE
+  dblib	cursor   	dbcursor			(same)		never
+  dblib	cursor   	dbcursorbind			(same)		never
+  dblib	cursor   	dbcursorclose			(same)		never
+  dblib	cursor   	dbcursorcolinfo			(same)		never
+  dblib	cursor   	dbcursorfetch			(same)		never
+  dblib	cursor   	dbcursorfetchex			n/a		never
+  dblib	cursor   	dbcursorinfo			(same)		never
+  dblib	cursor   	dbcursorinfoex			n/a		never
+  dblib	cursor   	dbcursoropen			(same)		never
+  #+END_QUOTE
+
+  ctlib:
+
+  #+BEGIN_QUOTE
+  ctlib	(all)	ct_cursor	OK	Initiate a Client-Library cursor command.
+  #+END_QUOTE
+* dblib
+  Client-Library is a library designed to accommodate cursors and
+  other advanced features. [as opposed to DB-Library, etc.]
+
+  dbfcmd – adds text to the command buffer using sprintf-type
+  formatting. This routine is the same as dbcmd, except that it allows
+  arguments to be substituted into the text. [but does it do escaping?]
+
+  There are two types of result rows: regular rows and compute
+  rows. Regular rows are generated from columns in a select command’s
+  select list; compute rows are generated from columns in a select
+  command’s compute clause. Since these two types of rows contain very
+  different data, the application must process them separately.
+
+  If a command batch contains only a single Transact-SQL command and
+  that command does not return rows (for example, a use database
+  command or an insert command), an application does not have to call
+  dbresults to process the results of the command. However, calling
+  dbresults in these situations causes no harm. It may result in
+  easier code maintenance if, after every command, you consistently
+  call dbresults until it returns NO_MORE_RESULTS.
+
+  If the command batch contains more than one Transact-SQL command, an
+  application must call dbresults once for every command in the batch,
+  whether or not the command returns rows. For this reason, it is
+  recommended that a DB- Library/C application always call dbresults
+  in a loop after sending a command or commands to a server.
+
+** binding
+   [here's where the binding comes in (with escaping, i hope):]
+
+   The simplest way to get result data is to bind result columns to
+   program variables, using dbbind and dbaltbind. Then, when the
+   application calls dbnextrow to read a result row (see “Reading
+   result rows” on page 19), DB- Library/C will automatically place
+   copies of the columns’ data into the program variables to which they
+   are bound. The application must call dbbind and dbaltbind after a
+   dbresults call but before the first call to dbnextrow.
+
+** buffer
+   [to reiterate the command buffer (why: transactions?):]
+
+   Note that DB-Library/C processes results one command at a time. When
+   the application has read all the results for one command, it must
+   call dbresults again to set up the results for the next command in
+   the command buffer. To ensure that all results are handled, Sybase
+   strongly recommends that dbresults be called in a loop.
+
+** cancelling
+   [cancelling (as opposed to gathering all the results à la freetds
+   dblib docs):]
+
+   The following routines cancel results:
+   - dbcancel :: cancels results from the current command batch. This
+                 routine cancels all the commands in the current batch.
+   - dbcanquery :: cancels any rows pending from the most recently
+                   executed query.
+
+** timeouts
+
+   By default, DB-Library will wait indefinitely for the results of a
+   server command to arrive. Applications can use the routines below to
+   specify a finite timeout period:
+   - dbsettime :: sets the number of seconds that DB-Library/C will
+                  wait for a server response
+   - DBGETTIME :: gets the number of seconds that DB-Library/C will
+                  wait for a server response
+
+** buffers
+   to reiterate the processing of command buffers (why: transaction?):
+
+   Note that DB-Library/C processes results one command at a time. When
+   the application has read all the results for one command, it must
+   call dbresults again to set up the results for the next command in
+   the command buffer. To ensure that all results are handled, Sybase
+   strongly recommends that dbresults be called in a loop.
+
+** messages vs. errors
+
+   - Server messages and errors, which range in severity from
+     informational messages to fatal errors. Server messages and errors
+     are known to DB- Library/C applications as “messages.” To list all
+     possible Adaptive Server messages, use the Transact-SQL command:
+
+     #+BEGIN_QUOTE
+     select * from sysmessages
+     #+END_QUOTE
+
+   - DB-Library/C warnings and errors, known to DB-Library/C applications
+     as “errors.”
+
+** mainline vs. centralized error-checking
+
+   - Test DB-Library/C routine return codes in the mainline code,
+     handling failures on a case-by-case basis
+   - Centralize message and error handling by installing a message
+     handler and an error handler, which are then automatically called
+     by DB-Library/C when a message or error occurs
+     
+     Note, however, that even an application that uses centralized error
+     and message handling will need some mainline error logic, depending
+     on the nature of the application.
+
+     To provide a DB-Library/C application with centralized message and
+     error handling, the application programmer must write a message
+     handler and an error handler and install them via =dbmsghandle= and
+     =dberrhandle=.
+
+** browse mode (this is cool)
+
+   Browse mode provides a means for browsing through database rows and
+   updating their values a row at a time.
+
+** text and image types
+
+   text and image are Adaptive Server datatypes designed to hold large
+   text or image values. The text datatype will hold up to
+   2,147,483,647 bytes of printable characters. The image datatype will
+   hold up to 2,147,483,647 bytes of binary data.
+
+   Because they can be so large, text and image values are not actually
+   stored in database tables. Instead, a pointer to the text or image
+   value is stored in the table. This pointer is called a “text
+   pointer.”
+
+** conversion
+
+   DB-Library/C supports conversions between most server datatypes with
+   the dbconvert and dbconvert_ps routines. For information on server
+   datatypes, see “Types” on page 408.
+
+   The dbbind, dbbind_ps, dbaltbind, and dbaltbind_ps routines, which
+   bind result columns to program variables, can also be used to
+   perform type conversion. Those routines each contain a parameter
+   that specifies the datatype of the receiving program variable. If
+   the data being returned from the server is of a different datatype,
+   DB-Library/C will usually convert it automatically to the type
+   specified by the parameter.
+
+** process control flow
+
+** remote procedure call
+
+   However, a remote procedure call is often more efficient than an
+   execute command. [hmm; thus.]
+
+** datetime and money
+
+** cleanup
+
+** cursors
+
+   - dbcursor :: Inserts, updates, deletes, locks, or refreshes a
+                 particular row in the fetch buffer
+
+   ah, thus.
+* ctlib
+** manual vs. guide
+   Although there is some introductory material about application
+   development in this manual, it is highly recommended that
+   applications programmers read the Client-Library Programmer’s Guide
+   before designing a Client-Library application.
+** initialization
+   ct_init initializes Client-Library. An application calls ct_init
+   after calling cs_ctx_alloc and before calling any other
+   Client-Library routine.
+** results
+   Almost all Client-Library programs will process results by using a
+   loop controlled by ct_results. Inside the loop, a switch takes place
+   on the current type of result. Different types of results require
+   different types of processing.
+
+   For row results, typically the number of columns in the result set
+   is determined and then used to control a loop in which result items
+   are bound to program variables. An application can call ct_res_info
+   to get the number of result columns, but in the example this is not
+   necessary, because exactly two columns were selected. After the
+   result items are bound, ct_fetch is called to fetch data rows until
+   end-of-data.
+
+   ct_bind binds a result item to a program variable. Binding creates
+   an association between a result item and a program data space. [so
+   binding is the opposite of what i assumed: not for constructing
+   commands, but for binding results to variables; or is the former
+   also available?]
+
+   ct_fetch fetches result data. In the example, since binding has been
+   specified and the count field in the CS_DATAFMT structure for each
+   column is set to 1, each ct_fetch call copies one row of data into
+   program data space. As each row is fetched, the example program
+   prints it.
+** synchronicity
+   Non-asynchronous routines can also return CS_BUSY if called when an
+   asynchronous operation is pending for a connection. [ouch.]
+** browse mode
+   Browse mode is included in 10.0 Client-Library in order to provide
+   compatibility with Open Server applications and older Open Client
+   libraries. Its use in new Open Client Client-Library applications
+   is discouraged, because cursors provide the same functionality in a
+   more portable and flexible manner. Further, browse mode is
+   SYBASE-specific and is not suited for use in a heterogeneous
+   environment.
+** callbacks
+   Two types of callback events, however, can occur when
+   Client-Library is not reading from the network. These are:
+   - The completion callback event, which occurs when an asynchronous
+     Client-Library routine completes.
+   - The notification callback event, which occurs when an Open Server
+     notification arrives for an application.
+
+*** client message callbacks
+    A client message callback must return either:
+    - CS_SUCCEED, to instruct Client-Library to continue any processing
+      that is currently occurring on this connection.
+    - CS_FAIL, to instruct Client-Library to terminate any processing
+      that is currently occurring on this connection.
+*** completion callbacks
+    A completion callback is called whenever an application receives
+    notice that an asynchronous routine has completed. 
+*** notification callbacks
+    A registered procedure is a type of procedure that is defined and
+    installed in a running Open Server. A Client-Library application
+    can use a remote procedure call command to execute a registered
+    procedure, and can “watch” for a registered procedure to execute.
+*** server message callbacks
+    An application can handle server error and informational messages
+    in- line, or through a server message callback routine. 
+** commands
+   1. Initiate the command by calling ct_command, ct_cursor, or
+      ct_dynamic.
+   2. Pass parameters for the command (if required). Most applications
+      pass parameters by calling ct_param once for each parameter that
+      the command requires, but it is also possible to pass parameters
+      for a command by using ct_dyndesc.
+   3. Send the command to the server by calling ct_send.
+   4. Verify the success of the command by calling ct_results.
+
+   [sweet: parameters is what i'm talking about (i think); can you
+   "bind" them? "pass"?]
+*** ct_dynamic
+    "prepared statements," of course; so-called "pre-compiler use"?
+
+     - The ability to send a command to execute a prepared statement
+       and reference the statement with a unique identifier.
+
+       A prepared statement is a statement that has been compiled and
+       stored with an identifier as a result of a
+       ct_dynamic(CS_PREPARE) call and a ct_send call.
+
+       An application typically prepares a statement if it plans to
+       execute the statement multiple times. Variables are
+       particularly useful in dynamic commands because they allow an
+       application to compile a statement once and change the values
+       of the statement’s variables each time it executes the
+       statement.
+     - The ability to describe (with CS_DESCRIBE_OUTPUT) prepared
+       statement output before sending a command to execute the
+       statement.
+     - Less overhead and faster performance than ct_command, if the
+       statement is executed more than once. This benefit is specific
+       to the execution of SQL statements on a SQL Server.
+
+     All of the above advantages can also be realized using a stored
+     procedure and either language or RPC commands. [fuck that!]
+** cursors
+** dynamic sql
+   [this is what they call "prepared statements", it seems.]
+
+   Dynamic SQL is primarily useful for precompiler support, but it can
+   also be used by interactive applications that do either of the
+   following:
+   - Generate SQL statements based on information provided by an
+     end-user
+   - Allow end-users to create whole or partial SQL statements
+
+   By ANSI definition, a cursor is associated with a single result
+   set, and thus, a single SQL statement. This means that a dynamic
+   SQL prepared statement can only be either:
+   - A SQL select statement or a:
+   - A Transact-SQL execute statement The stored procedure being
+     executed can contain only a single SQL select statement.
+
+   [does this preclude update, delete, etc.? what the fuck is a
+   transact-sql statement?]
+
+   SQL Server implements dynamic SQL using temporary stored
+   procedures. A temporary stored procedure is created when a SQL
+   statement is prepared, and destroyed when that prepared statement
+   is de-allocated. De-allocation can occur either explicitly with a
+   ct_dynamic(CS_DEALLOC) call or implicitly when a connection is
+   closed.
+
+   See the Transact-SQL User’s Guide for a complete discussion of
+   stored procedures. [ah, i see.]
+
+   There are two ways to dynamically execute SQL statements. One is to
+   perform the prepare and execute operations in one step, and the
+   other is to perform the prepare and execute operations separately.
+
+   Executing a SQL statement is what actually makes things happen:
+   rows are added by an insert statement, removed by a delete
+   statement, changed by an update statement, or retrieved by a select
+   statement. [nice, i guess it does support that.]
+
+*** prepare and execute
+    - Prepare the dynamic SQL statement.
+    - Get a description of prepared statement input, if necessary.
+    - Get a description of prepared statement output, if necessary.
+    - Execute the prepared statement or declare and open a cursor on the
+      prepared statement.
+    - Process results, if necessary.
+    - De-allocate the prepared statement.
+**** preparing
+     1. Store the text of the statement in a character string host
+        variable,
+        for example:
+        char        *query = “select type, title, price
+                                     from titles
+                                     where title_id = ?”
+        The SQL statement may include one or more dynamic parameter
+        markers that act as placeholders. A placeholder is represented
+        by a “?” character. Placeholders can be specified:
+        - For one or more columns in a select list
+        - For one or more values in an insert statement
+        - In the set clause of an update statement
+        - In a where clause of a select or update statement
+        At execution time, the application must substitute a value for
+        each dynamic parameter marker.
+     2. Call ct_dynamic with type as CS_PREPARE to initiate a command to
+        prepare the statement.
+        To initiate a command to prepare the above SQL statement:
+        ct_dynamic(cmd, CS_PREPARE, “myid”, CS_NULLTERM,
+              query, CS_NULLTERM);
+        To initiate a command to prepare a statement that executes a
+        stored procedure, specify “exec sp_name” as the SQL text, where
+        sp_name is the actual name of the stored procedure to be
+        executed:
+        ct_dynamic(cmd, CS_PREPARE, “myid”, CS_NULLTERM,
+              “exec sp_2”, CS_NULLTERM);
+     3. Call ct_send to send the command to the server.
+     4. Call ct_results as necessary to process the results of the command.
+        A successful CS_PREPARE command will generate a
+        CS_CMD_SUCCEED result.
+**** executing
+     1. Call ct_dynamic with type as CS_EXECUTE to initiate a command to
+        execute the statement.
+     2. Define the input values to the SQL statement by performing the
+        following steps for each input value:
+        - Prompt the end-user for an input value.
+        - Call ct_param to pass the input value to the SQL statement.
+        Alternately, if the application is using a dynamic SQL descriptor
+        area, perform these steps for each input value:
+        - Prompt the end-user for an input value.
+        - Call ct_dyndesc with operation as CS_SETATT to put the value into
+          the descriptor area.
+        If the application is using a dynamic SQL descriptor area, then
+        after all the input values have been defined, associate the
+        dynamic SQL descriptor area with the prepared statement:
+        - Call ct_dyndesc with operation as CS_USE_DESC.
+        The input values are substituted for the dynamic parameter
+        markers.
+     3. Call ct_send to send the command to the server.
+     4. Call ct_results as necessary to process the results of the command.
+**** de-allocating
+     1. If the application used descriptor areas for the prepared statement
+        input and output, de-allocate the descriptor areas by calling
+        dt_dyndesc with operation as CS_DEALLOC once for each descriptor
+        area.
+     2. Call ct_dynamic with type as CS_DEALLOC to initiate a command to
+        de-allocate the prepared statement.
+     3. If the application declared and opened a cursor on the prepared
+        statement, call ct_cursor with type as CS_CURSOR_CLOSE and option
+        as CS_DEALLOC to initiate a command both to close and de-
+        allocate the cursor.
+     4. Call ct_send to send the command to de-allocate the statement.
+     5. Call ct_results as necessary to process the results of the command.
+*** vs. stored procedures
+    Because of the numerous restrictions of dynamic SQL, we recommend
+    that applications use stored procedures to accomplish the same
+    tasks. Stored procedures offer identical functionality to dynamic
+    SQL except for the ability to get a description of prepared
+    statement input: creating a stored procedure is analogous to
+    preparing a SQL statement, a stored procedure’s input parameters
+    serve the same purpose as do dynamic parameter markers, and
+    executing a stored procedure is equivalent to executing a prepared
+    statement. [lambda vs. named procedure]
+** error handling
+   All Client-Library routines return success or failure
+   indications. It is highly recommended that applications check these
+   return codes.
+** sequence
+   At the context level, an application sets up its environment:
+   allocating one or more context structures, setting CS-Library
+   properties for the contexts, initializing Client-Library, and
+   setting Client-Library properties for the contexts.
+
+   At the connection level, an application connects to a server:
+   allocating one or more connection structures, setting properties
+   for the connections, opening the connections, and setting any
+   server options for the connections. An application can allocate a
+   connection structure only after a context structure has been
+   allocated.
+
+   At the command level, an application allocates one or more command
+   structures, sends commands, and processes results. An application
+   can allocate a command structure only after a connection structure
+   has been allocated.
+** messages
+** macros
+   Open Client provides the following macros to help an application
+   decode a Client-Library or CS-Library message number and break it
+   into its four parts so that each component can be displayed
+   separately:
+   - CS_LAYER(msg_number) - identifies the layer reporting the error.
+   - CS_ORIGIN(msg_number) - indicates where the error manifested
+     itself.
+   - CS_SEVERITY(msg_number) - indicates the severity of the error.
+   - CS_NUMBER(msg_number) - identifies the actual layer-specific error
+     number being reported.
+** parameters
+*** null vs. unused
+    Pass NULL and unused pointer parameters as NULL.
+
+    If the parameter has a NULL value, the length variable associated
+    with the parameter, if any, must be 0 or CS_UNUSED.
+
+    If the parameter is unused, the length variable associated with
+    the parameter, if any, must be CS_UNUSED.
+
+    Pass non-pointer unused parameters as CS_UNUSED.
+*** strings
+    Most string parameters are associated with a parameter that indicates
+    the length of the string.
+
+    When passing a null-terminated string, an application can pass the
+    length parameter as CS_NULLTERM.
+
+    When passing a string that is not null-terminated, an application must
+    set the associated length parameter to the length, in bytes, of the
+    string.
+
+    If a string parameter is NULL the associated length parameter must be
+    0 or CS_UNUSED.
+*** item numbers
+    An application can call ct_res_info with type as CS_NUMDATA to get
+    the number of items in the current result set.
+** properties
+   Login properties are used when logging into a server. Login
+   properties include CS_USERNAME, CS_PASSWORD, and CS_PACKETSIZE.
+
+   An application calls ct_config, ct_con_props, and ct_cmd_props to
+   set and retrieve Client-Library properties at the context,
+   connection, and command structure levels, respectively. An
+   application calls cs_config to set and retrieve CS-Library context
+   properties.
+** results
+- Regular row results
+- Cursor row results
+- Parameter results
+- Stored procedure return status results
+- Compute row results
+- Message results
+- Describe results
+- Format results
+
+An application processes results by calling ct_results, which
+indicates
+the type of result available by setting *result_type.
+
+ct_results sets *result_type to CS_CMD_DONE to indicate that the
+results of
+a “logical command” have been completely processed. A logical
+command is generally considered to be any Open Client command
+defined via ct_command, ct_dynamic, or ct_cursor.
+
+Some commands, for example a language command containing a
+Transact-SQL update statement, do not generate results. ct_results
+sets
+*result_type to CS_CMD_SUCCEED or CS_CMD_FAIL to indicate the status
+of a command that does not return results.
+
+*** processing
+    #+BEGIN_EXAMPLE
+    while ct_results returns CS_SUCCEED
+        case CS_ROW_RESULT
+            ct_res_info to get the number of columns
+            for each column:
+                 ct_describe to get a description of the
+                     column
+                 ct_bind to bind the column to a program
+                     variable
+            end for
+            while ct_fetch returns CS_SUCCEED or
+                 CS_ROW_FAIL
+                 if CS_SUCCEED
+                     process the row
+                 else if CS_ROW_FAIL
+                     handle the row failure;
+                 end if
+            end while
+            switch on ct_fetch’s final return code
+                 case CS_END_DATA...
+                 case CS_CANCELED...
+                 case CS_FAIL...
+            end switch
+        end case
+        case CS_CURSOR_RESULT
+            ct_res_info to get the number of columns
+            for each column:
+                 ct_describe to get a description of the
+                     column
+                 ct_bind to bind the column to a program
+                     variable
+            end for
+        while ct_fetch returns CS_SUCCEED or
+             CS_ROW_FAIL
+             if CS_SUCCEED
+                 process the row
+             else if CS_ROW_FAIL
+                 handle the row failure
+             end if
+             /* For update or delete only: */
+             if target row is not the row just fetched
+                 ct_keydata to specify the target row
+                     key
+             end if
+             /* End for update or delete only */
+             /* To send another cursor command: */
+             ct_cursor to initiate the cursor command
+             ct_param if command is update of some
+                 columns only
+             ct_send to send the command
+             while ct_results returns CS_SUCCEED
+                 (...process results...)
+             end while
+             /* End to send another cursor command */
+        end while
+        switch on ct_fetch’s final return code
+             case CS_END_DATA...
+             case CS_CANCELED...
+             case CS_FAIL...
+        end switch
+    end case
+    case CS_PARAM_RESULT
+        ct_res_info to get the number of parameters
+        for each parameter:
+             ct_describe to get a description of the
+                 parameter
+             ct_bind to bind the parameter to a
+                 variable
+        end for
+        while ct_fetch returns CS_SUCCEED or
+             CS_ROW_FAIL
+             if CS_SUCCEED
+                 process the row of parameters
+             else if CS_ROW_FAIL
+                 handle the failure
+             end if
+        end while
+        switch on ct_fetch’s final return code
+             case CS_END_DATA...
+             case CS_CANCELED...
+             case CS_FAIL...
+        end switch
+    end case
+    case CS_STATUS_RESULT
+        ct_bind to bind the status to a program
+             variable
+        while ct_fetch returns CS_SUCCEED or
+             CS_ROW_FAIL
+             if CS_SUCCEED
+                 process the return status
+             else if CS_ROW_FAIL
+                 handle the failure
+             end if
+        end while
+        switch on ct_fetch’s final return code
+             case CS_END_DATA...
+             case CS_CANCELED...
+             case CS_FAIL...
+        end switch
+    end case
+    case CS_COMPUTE_RESULT
+        (optional: ct_compute_info to get bylist
+             length, bylist, or compute row id)
+        ct_res_info to get the number of columns
+        for each column:
+             ct_describe to get a description of the
+                 column
+             ct_bind to bind the column to a program
+                 variable
+             (optional: ct_compute_info to get the
+                 compute column id or the aggregate
+                 operator for the compute column)
+        end for
+        while ct_fetch returns CS_SUCCEED or
+             CS_ROW_FAIL
+             if CS_SUCCEED
+                 process the compute row
+             else if CS_ROW_FAIL
+                 handle the failure
+             end if
+        end while
+        switch on ct_fetch’s final return code
+             case CS_END_DATA...
+             case CS_CANCELED...
+             case CS_FAIL...
+        end switch
+    end case
+        case CS_MSG_RESULT
+            ct_res_info to get the message id
+            code to handle the message
+        end case
+        case CS_DESCRIBE_RESULT
+            ct_res_info to get the number of columns
+            for each column:
+                 ct_describe or ct_dyndesc to get a
+                     description
+            end for
+        end case
+        case CS_ROWFMT_RESULT
+            ct_res_info to get the number of columns
+            for each column:
+                 ct_describe to get a column description
+                 send the information on to the gateway
+                     client
+            end for
+        end case
+        case CS_COMPUTEFMT_RESULT
+            ct_res_info to get the number of columns
+            for each column:
+                 ct_describe to get a column description
+                 (if required:
+                     ct_compute_info for compute
+                         information
+                 end if required)
+                 send the information on to the gateway
+                     client
+            end for
+        end case
+        case CS_CMD_DONE
+            indicates a command’s results are completely
+                 processed
+        end case
+        case CS_CMD_SUCCEED
+            indicates the success of a command that
+                 returns no results
+        end case
+        case CS_CMD_FAIL
+            indicates a command failed
+        end case
+    end while
+    switch on ct_results’ final return code
+        case CS_END_RESULTS
+            indicates no more results
+        end case
+        case CS_CANCELED
+            indicates results were canceled
+        end case
+        case CS_FAIL
+            indicates ct_results failed
+        end case
+    end switch    
+    #+END_EXAMPLE
+
+*** value
+    When processing a result set, there are three ways for an
+    application to retrieve a result item’s value:
+    - It can call ct_bind to associate a result item with a program
+      variable. When the program calls ct_fetch to fetch a result row,
+      the item’s value is automatically copied into the associated
+      program variable. Most applications will use this method for all
+      result items except large text or image values.
+    - It can call ct_get_data to retrieve a result item’s value in
+      chunks. After calling ct_fetch to fetch the row, the application
+      calls ct_get_data in a loop. Each ct_get_data call retrieves a
+      chunk of the result item’s value. Most application will use
+      ct_get_data only to retrieve large text or image values.
+    - It can call ct_dyndesc to retrieve result item descriptions and
+      values. An application calls ct_dyndesc once for each result
+      item, after calling ct_fetch to fetch the row. Typical
+      applications will not use ct_dyndesc, which is intended for
+      precompiler support.
+** types
