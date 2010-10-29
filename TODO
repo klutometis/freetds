@@ -1,4 +1,15 @@
 # -*- mode: org; -*-
+* postgresql
+  has things like:
+
+  #+BEGIN_SRC scheme
+    (when (PQisBusy conn-ptr)
+          (thread-wait-for-i/o! conn-fd #:input)
+          (loop))
+  #+END_SRC
+
+  which can happen, apparently, even with synchronous calls (at least
+  in dblib).
 * TODO cursors?
   #+BEGIN_QUOTE
   Because relational databases are oriented toward sets, no concept of
@@ -720,3 +731,67 @@ of a command that does not return results.
       applications will not use ct_dyndesc, which is intended for
       precompiler support.
 ** types
+* ctlib guide
+** applications
+*** interpreter
+    - ct_command(CS_LANG_CMD) to define a language command and its
+      text
+    - ct_send to send it to the server
+    - ct_results to read the results
+    - ct_res_info and ct_describe to find out column formats
+    - ct_bind and ct_fetch to retrieve rows
+*** data entry
+    - ct_command(CS_RPC_CMD) to define an RPC command
+    - ct_param or ct_setparam to define parameter values with which to
+      call
+      the procedure
+    - ct_send to send the command to the server
+    - ct_results, ct_bind, ct_fetch, and so forth, to read the results
+*** interactive
+    [we might be doing this with the library; but also the first,
+    too.]
+    - Prepare the statement, by sending a ct_dynamic(CS_PREPARE)
+      command and handling the results
+    - Query for parameter formats, by sending a
+      ct_dynamic(CS_DESCRIBE_INPUT) command and handling the
+      results
+    - After prompting for input values, execute the statement by sending a
+      ct_dynamic(CS_EXECUTE) command and handling the results
+      
+** example
+   1. Set up the Client-Library programming environment:
+      1.  Use cs_ctx_alloc to allocate a context structure.
+      2.  Use cs_config to set any CS-Library properties for the
+          context.
+      3.  Use ct_init to initialize Client-Library.
+      4.  Use ct_config to set Client-Library properties for the
+          context.
+   2. Define error handling. Most applications use callback routines to
+      handle errors:
+      1.  Use cs_config(CS_MESSAGE_CB) to install a CS-Library error
+          callback.
+      2.  Use ct_callback to install a client message callback.
+      3.  Use ct_callback to install a server message callback.
+   3. Connect to a server:
+      1. Use ct_con_alloc to allocate a connection structure.
+      2.  Use ct_con_props to set any properties in the connection
+          structure
+      3.  Use ct_connect to open a connection to a server.
+      4.  Use ct_options to set any server options for this
+          connection.
+   4. Send a language command to the server:
+      1.  Use ct_cmd_alloc to allocate a command structure.
+      2.  Use ct_command to initiate a language command.
+      3.  Use ct_send to send the command.
+   5. Process the results of the command:
+      1.  Use ct_results to set up results for processing (called in a
+          loop).
+      2.  Use ct_res_info to get information about a result set.
+      3.  Use ct_describe to get information about a result item.
+      4.  Use ct_bind to bind a result item to program data space.
+      5.  Use ct_fetch to fetch result rows (called in a loop).
+   6. Finish:
+      1.  Use ct_cmd_drop to deallocate the command structure.
+      2.  Use ct_close to close the connection with the server.
+      3.  Use ct_exit to exit Client-Library.
+      4.  Use cs_ctx_drop to deallocate the context structure.
