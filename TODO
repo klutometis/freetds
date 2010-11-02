@@ -795,3 +795,460 @@ of a command that does not return results.
       2.  Use ct_close to close the connection with the server.
       3.  Use ct_exit to exit Client-Library.
       4.  Use cs_ctx_drop to deallocate the context structure.
+** initializing client library
+*** external configuration
+    As an alternative to setting properties with hard-coded ct_config
+    calls, Client- Library allows external configuration of property
+    values for applications that have been configured to use this
+    feature.
+** connect
+   For a complete list of connection properties, see the ct_con_props
+   reference page in the Open Client Client-Library/C Reference
+   Manual.
+** send commands
+** process the results of a command
+   #+BEGIN_EXAMPLE
+   while ct_results returns CS_SUCCEED
+            switch on result_type
+                case row results
+                    for each column:
+                        ct_bind
+                    end for
+                    while ct_fetch is returning rows
+                        process each row
+                    end while
+                    check ct_fetch’s final return code
+                end case row results
+                case command done ....
+                case command failed ....
+                case other result type....
+                ... raise an error ...
+            end switch
+   end while
+   check ct_results’ final return code   
+   #+END_EXAMPLE
+** command rules
+   Within a connection, the results of a command must be completely
+   processed before another command can be sent. The exception to this
+   rule is a ct_cursor (CS_CURSOR_OPEN) command, which generates a
+   cursor result set.
+** types
+   Client-Library supports a wide range of datatypes, which are shared
+   with CS-Library and Server-Library. In most cases, they correspond
+   directly to Adaptive Server datatypes. [most cases?]
+
+   cstypes.h
+
+   There are two reasons why you should use Open Client/Server
+   datatypes in your application rather than the native C datatypes:
+   heterogeneous architecture, and portability of application code.
+
+   For this reason, always use the correct CS_TYPEDEF to declare any
+   variable that holds data to be sent to the server or read from the
+   results of a server command.
+*** type constants
+    Type constants are symbolic values that identify the datatype of a
+    program variable. Many CS-Library, Client-Library, and
+    Server-Library routines take the address of a program variable as
+    a CS_VOID * parameter. Type constants are required to identify the
+    datatype when passing CS_VOID * parameters. Typically, a type
+    constant is passed to a routine as the datatype field of a
+    CS_DATAFMT structure.
+** errors and messages
+*** CS_EXTRA_INF
+    The CS_EXTRA_INF property determines whether or not Client-Library
+    returns certain kinds of informational messages, such as the
+    number of rows affected by a command.
+*** sequencing long messages
+    Message callback routines and ct_diag return Client-Library and
+    server messages in CS_CLIENTMSG and CS_SERVERMSG structures. In
+    the CS_CLIENTMSG structure, the message text is stored in the
+    msgstring field. In the CS_SERVERMSG structure, the message text
+    is stored in the text field. Both msgstring and text are
+    CS_MAX_MSG bytes long.
+
+    If a message longer than CS_MAX_MSG - 1 bytes is generated,
+    Client- Library’s default behavior is to truncate the
+    message. However, an application can use the CS_NO_TRUNCATE
+    property to instruct Client-Library to “sequence” long messages
+    instead of truncating them.
+*** extended error data
+    On receiving this message, the application must identify the
+    problem column or columns to the end user so that the user can
+    readily correct them. This information is also available in the
+    text of the duplicate key message, but an application must parse
+    the text to extract the column names.
+
+    For information about how to identify and process extended error
+    data, see the “Error and Message Handling” topics page in the Open
+    Client Client- Library/C Reference Manual.
+** command types
+   The following types of commands can take parameters:
+   - A language command, when the command text contains variables
+   - An RPC command, when the stored procedure takes parameters
+   - A cursor-declare command, when the body of the cursor contains host
+     language parameters
+   - A cursor-open command, when the body of the cursor contains host
+     language parameters
+   - A message command
+   - A dynamic SQL execute command
+   
+   An application calls ct_param or ct_setparam once for each
+   parameter that a command requires. These routines perform the same
+   function, except that ct_param copies a parameter value, while
+   ct_setparam copies the address of a variable that contains the
+   value. If ct_setparam is used, Client-Library reads the parameter
+   value when the command is sent.
+*** processing
+    Each time a command is sent, the application must process or
+    cancel the results. A typical application calls ct_results until
+    it returns a value other than CS_SUCCEED.
+*** language commands
+    Language commands for Adaptive Server must be written in
+    Transact-SQL. [that's not MSSQL, though.]
+
+    Your application initiates a language command by calling
+    ct_command with type as CS_LANG_CMD and *buffer as the language
+    text.
+
+    Language commands can take parameters. For Adaptive Server client
+    applications, parameter placement is indicated by undeclared
+    variables in the command text. For example, a language command
+    such as the one below takes a parameter whose value is substituted
+    for “@state_name”: select au_lname, city from pubs2..authors \
+    where state = @state_name" [again, not MSSQL.]
+*** cursors
+    Use Client-Library cursors when you want to process two or more
+    commands at the same time while using only one server
+    connection. [only use case?]
+** results-handling
+*** types
+    - Regular row results – rows returned when the server processes a
+        select statement.
+    - Cursor row results – rows returned when the server processes a
+        ct_cursor Client-Library cursor-open command.
+    - Parameter results – fetchable data that can represent:
+        - Output values for an Adaptive Server stored procedure’s
+            return parameters
+        - Output values for an Open Server registered procedure’s
+            return parameters
+   - A new timestamp value for an updated text/image column (seen only
+       when processing the results of a ct_command send-data command)
+   - A new timestamp value for a row that was updated with a language
+       command containing a browse-mode update statement
+   - Stored procedure return status results – the return value from an
+     Adaptive Server stored procedure or Open Server registered
+     procedure.
+   - Compute row results –intermediate rows returned when the server
+     processes a select statement with a compute by clause.
+   - Message results – a message ID returned by an Open Server
+     application’s message command handler while processing the
+     results of a message command.
+   - Describe results – informational results that describe the format
+     of a prepared dynamic SQL statement’s input parameters or result
+     columns.
+   - Format results – informational results used by Open Server
+     gateway applications to retrieve regular row and compute row
+     formats before the actual data arrives.
+
+   A single command can generate more than one type of result. For
+   example, a language command that executes a stored procedure can
+   generate multiple regular row and compute row result sets, a
+   parameter result set, and a return status result set. For this
+   reason, it is important that you code applications to handle all
+   types of results that a server can generate.
+*** loop
+   #+BEGIN_EXAMPLE
+   while ct_results returns CS_SUCCEED
+        (optional) ct_res_info to get current
+            command number
+        switch on result_type
+            /*
+            ** Values of result_type that indicate
+            ** fetchable results:
+            */
+            case CS_COMPUTE_RESULT...
+            case CS_CURSOR_RESULT...
+            case CS_PARAM_RESULT...
+            case CS_ROW_RESULT...
+            case CS_STATUS_RESULT...
+            /*
+            ** Values of result_type that indicate
+            ** non-fetchable results:
+            */
+            case CS_COMPUTEFMT_RESULT...
+            case CS_MSG_RESULT...
+            case CS_ROWFMT_RESULT...
+            case CS_DESCRIBE_RESULT...
+            /*
+            ** Other values of result_type:
+            */
+            case CS_CMD_DONE...
+                (optional) ct_res_info to get the
+                    number of rows affected by
+                    the current command
+            case CS_CMD_FAIL...
+            case CS_CMD_SUCCEED...
+        end switch
+   end while
+   switch on ct_results’ final return code
+       case CS_END_RESULTS...
+       case CS_CANCELED...
+       case CS_FAIL...
+   end switch
+   #+END_EXAMPLE
+**** row result    
+     #+BEGIN_EXAMPLE
+     case CS_ROW_RESULT
+          ct_res_info(CS_NUMDATA) to get the number of columns
+          for each column:
+               ct_describe to get a description of the column
+               ct_bind to bind the column to a program variable
+          end for
+          while ct_fetch returns CS_SUCCEED or CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the row
+               else if CS_ROW_FAIL
+                   handle the row failure
+               end if
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+     end case   
+     #+END_EXAMPLE
+
+**** cursor result
+
+     #+BEGIN_EXAMPLE
+     case CS_CURSOR_RESULT
+     ct_res_info(CS_NUMDATA) to get the number of columns
+          for each column:
+              ct_describe to get a description of the column
+             ct_bind to bind the column to a program variable
+          end for
+         while ct_fetch returns CS_SUCCEED or CS_ROW_FAIL
+                and cursor has not been closed
+              if CS_SUCCEED
+                  process the row
+              else if CS_ROW_FAIL
+                  handle the row failure
+              end if
+            /* For update or delete only:                 */
+              if target row is not the row just fetched
+                  ct_keydata to specify the target row key
+              end if
+             /* End for update or delete only             */
+            /* To send a nested cursor update, delete, or
+     close command: */
+              ct_cursor to initiate the cursor command
+              /* For updates/deletes whose “where” clause
+     contains variables */
+              ct_param or ct_setparam for each parameter
+              /* End for updates/deletes whose ... */
+              ct_send to send the command
+              while ct_results returns CS_SUCCEED
+                  (...process results...)
+              end while
+              /* End to send a nested cursor command */
+        end while
+         switch on ct_fetch’s final return code
+              case CS_END_DATA...
+              case CS_CANCELED...
+              case CS_FAIL...
+         end switch
+         if cursor was closed
+              break out of outer ct_results loop
+         end if
+     end case   
+     #+END_EXAMPLE
+
+**** parameter result
+
+     #+BEGIN_EXAMPLE
+     case CS_PARAM_RESULT
+          ct_res_info(CS_NUMDATA) to get the number of parameters
+          for each parameter:
+               ct_describe to get a description of the parameter
+               ct_bind to bind the parameter to a variable
+          end for
+        while ct_fetch returns CS_SUCCEED or CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the row of parameters
+               else if CS_ROW_FAIL
+                   handle the failure
+               end if
+          end while
+        switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+     end case
+     #+END_EXAMPLE
+
+**** return status
+
+     #+BEGIN_EXAMPLE
+     case CS_STATUS_RESULT
+          ct_bind to bind the status to a program variable
+          while ct_fetch returns CS_SUCCEED or CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the return status
+               else if CS_ROW_FAIL
+                   handle the failure
+               end if
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+      end case     
+     #+END_EXAMPLE
+
+**** compute results
+
+     (adaptive server bullshit?)
+
+     #+BEGIN_EXAMPLE
+     case CS_COMPUTE_RESULT
+          (optional)ct_compute_info to get bylist length,
+          bylist, or compute row id
+          ct_res_info(CS_NUMDATA) to get the number of columns
+          for each column:
+               ct_describe to get a description of the column
+               ct_bind to bind the column to a program variable
+               (optional: ct_compute_info to get the compute
+                   column id or the aggregate operator for the
+                   compute column)
+          end for
+          while ct_fetch returns CS_SUCCEED or CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the compute row
+               else if CS_ROW_FAIL
+                   handle the failure
+               end if
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+      end case     
+     #+END_EXAMPLE
+
+**** message results
+
+     #+BEGIN_EXAMPLE
+     case CS_MSG_RESULT
+          ct_res_info to get the message ID
+          code to handle the message ID
+      end case
+     #+END_EXAMPLE
+
+**** describe results
+
+     #+BEGIN_EXAMPLE
+     case CS_DESCRIBE_RESULT
+          ct_res_info to get the number of columns
+          for each column:
+               ct_describe or ct_dyndesc to get a description
+          end for
+      end case     
+     #+END_EXAMPLE
+
+*** result_type as command status
+   - CS_CMD_DONE – indicates that the results of a logical command
+     have been completely processed. See “Logical commands” on page
+     101 for an explanation of this term.
+   - CS_CMD_SUCCEED – indicates the success of a command that returns
+     no data, such as a Transact-SQL insert or delete command.
+   - CS_CMD_FAIL – indicates that, due to error, the server failed to
+     execute a server command. For example, the text of a language
+     command might contain a syntax error or refer to a nonexistent
+     object.
+
+     Because a Client-Library command can execute multiple server
+     commands, an application must either:
+     - Continue to call ct_results to process results generated by any
+          other server commands contained in the original
+          Client-Library command, or
+     - Call ct_cancel(CS_CANCEL_ALL) to cancel the Client-Library
+       command and discard its results.
+
+   Logical commands and Client-Library commands are not equivalent. A
+   Client- Library command can execute multiple logical commands on
+   the server, for example, a stored procedure can execute multiple
+   select statements that return data, and each such statement
+   represents one logical command. A logical command can generate one
+   or more result sets; for example, a select statement can return
+   multiple regular-row and compute results sets. [and that, mein
+   freunds: why we don't do proprietary software.]
+
+*** ct_results final return code
+   - CS_END_RESULT – indicates a normal loop exit.
+   - CS_CANCELED – indicates that results were canceled:
+     ct_cancel(CS_CANCEL_ALL) or ct_cancel(CS_CANCEL_ATTN) was called
+     while processing results.
+   - CS_FAIL – indicates a serious client-side or network error, such as
+     a communication failure or a memory shortage.
+
+** dynamic commands
+*** prepare and execute
+1. Prepare the dynamic SQL statement.
+  -    ct_dynamic(CS_PREPARE)
+  -    ct_send
+  -    ct_results, in a loop
+2. (Optional) Get a description of the parameters required to execute
+   the prepared statement.
+  -    ct_dynamic(CS_DESCRIBE_INPUT)
+  -    ct_send
+  -    ct_results, in a loop
+  ct_results returns with a result_type of CS_DESCRIBE_RESULT to
+  indicate that the parameter descriptions are available.
+3. (Optional) Get a description of the result columns returned by the
+   prepared statement.
+  -    ct_dynamic(CS_DESCRIBE_OUTPUT)
+  -    ct_send
+  -    ct_results, in a loop
+  ct_results returns with a result_type of CS_DESCRIBE_RESULT to
+  indicate that the description is available.
+4. Execute the prepared statement or declare and open a cursor on the
+   prepared statement.  To execute the prepared statement (without a
+   cursor):
+  -    ct_dynamic(CS_EXECUTE).
+  -    If necessary, define parameter values with ct_param,
+  ct_setparam,
+       ct_dyndesc, or ct_dynsqlda.
+  -    ct_send.
+  -    ct_results, in a loop. Fetchable results may require
+  processing.
+  For a description of how to execute a prepared statement with a
+  cursor, see
+  “Using Client-Library cursors” on page 109.
+5. Deallocate the prepared statement.  If a cursor is declared on the
+   statement, first close and deallocate the cursor:
+  -    ct_cursor(CS_CURSOR_CLOSE, CS_DEALLOC) or, if the cursor is
+       not open, ct_cursor(CS_CURSOR_DEALLOC)
+  ct_send
+  -    ct_results, in a loop
+  -    Initiate and send a command to deallocate the prepared
+  statement:
+  -    ct_dynamic(CS_DEALLOC)
+  -    ct_send
+  -    ct_results, in a loop
+  The deallocate command returns no fetchable results.
+* ffi
+  see this shit, too:
+  http://wiki.call-cc.org/man/4/Unit%20lolevel#foreign-pointers
+
+  also: http://wiki.call-cc.org/man/4/C%20interface
+** foreign-safe-lambda
+  [syntax] (foreign-safe-lambda RETURNTYPE NAME ARGTYPE ...) 
+
+  This is similar to foreign-lambda, but also allows the called function
+  to call Scheme functions and allocate Scheme data-objects. See
+  Callbacks.

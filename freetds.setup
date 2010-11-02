@@ -1,0 +1,2 @@
+(compile -lct -o harro test-freetds.scm)
+(compile -t -lct -o harro test-freetds.scm)
