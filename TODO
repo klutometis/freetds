@@ -1,4 +1,18 @@
 # -*- mode: org; -*-
+* TODO CS_VERSION_X
+  should this really be hard-coded; or does freetds handle this
+  according to freetds.conf?
+* DONE cs vs. ct
+  CLOSED: [2010-11-02 Tue 16:25]
+  client-server library vs. client library, apparently:
+  #+BEGIN_QUOTE
+  CS-Library routines start with the prefix “cs.” Client-Library
+  routines start with the prefix “ct”. All Client-Library programs
+  include at least two calls to CS-Library, because they must allocate
+  and drop a context structure. (ctlib guide, p. 18)
+  #+END_QUOTE
+* ODBC instead?
+  might be of more general interest; is the more general solution.
 * postgresql
   has things like:
 
