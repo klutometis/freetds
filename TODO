@@ -1,4 +1,7 @@
 # -*- mode: org; -*-
+* TODO naming
+  there is an inconsistency between constants (which we translate
+  verbosely) and procedures (which we translate literally).
 * TODO CS_VERSION_X
   should this really be hard-coded; or does freetds handle this
   according to freetds.conf?
