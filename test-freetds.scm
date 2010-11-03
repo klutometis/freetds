@@ -1,5 +1,5 @@
-#;(use foreign)
 (use format foreigners lolevel)
+(include "test-freetds-secret.scm")
 
 (foreign-declare "#include <ctpublic.h>")
 
