@@ -80,9 +80,15 @@
     cs-retcode
   (freetds-error 'callback "holy shit!"))
 
-(define-external (ct_client_message_callback (cs-context* context) 
+(define-external (cs_client_message_callback (cs-context* context) 
                                              (cs-connection* connection)
                                              (cs-client-message* message))
+    cs-retcode
+  (freetds-error 'callback "holy shit!"))
+
+(define-external (cs_server_message_callback (cs-context* context) 
+                                             (cs-connection* connection)
+                                             (cs-server-message* message))
     cs-retcode
   (freetds-error 'callback "holy shit!"))
 
@@ -103,11 +109,11 @@
    (lambda ()
      (cs-config context
                 cs-set
-                cs-message-cb
+                cs-message-callback
                 cs_message_callback
                 cs-unused
                 (null-pointer)))
-   'set-cs-message-callback
+   'set-cs-library-message-callback
    "failed to set client-server-library message-callback")
 
   (error-on-failure
@@ -115,7 +121,17 @@
      (ct-callback context
                   (null-pointer)
                   cs-set
-                  cs-client-message-cb
-                  ct_client_message_callback))
-   'set-ct-client-message-callback
-   "failed to set client message-callback"))
+                  cs-client-message-callback
+                  cs_client_message_callback))
+   'set-client-library-message-callback
+   "failed to set client-library message-callback")
+
+  (error-on-failure
+   (lambda ()
+     (ct-callback context
+                  (null-pointer)
+                  cs-set
+                  cs-server-message-callback
+                  cs_server_message_callback))
+   'set-server-message-callback
+   "failed to set server message-callback"))
