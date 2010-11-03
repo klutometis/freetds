@@ -5,8 +5,8 @@
 
 (define-foreign-type cs-context* (c-pointer "CS_CONTEXT"))
 (define-foreign-type cs-connection* (c-pointer "CS_CONNECTION"))
-(define-foreign-type cs-server-message* (c-pointer "CS_SERVERMSG"))
 (define-foreign-type cs-client-message* (c-pointer "CS_CLIENTMSG"))
+(define-foreign-type cs-server-message* (c-pointer "CS_SERVERMSG"))
 (define-foreign-type cs-int integer32)
 (define-foreign-variable cs-version-100 cs-int "CS_VERSION_100")
 ;; (define-foreign-variable cs-succeed cs-retcode "CS_SUCCEED")
