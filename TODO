@@ -1,4 +1,11 @@
 # -*- mode: org; -*-
+* DONE freetds configuration
+  CLOSED: [2010-11-03 Wed 11:33]
+  - CLOSING NOTE [2010-11-03 Wed 11:33] \\
+    come to think of it, we have to do the same thing with the python
+    wrapper; let's include a secret that doesn't get checked in.
+  we're setting the name and password hard-codedly; how do we defer to
+  freetds.conf?
 * TODO naming
   there is an inconsistency between constants (which we translate
   verbosely) and procedures (which we translate literally).
