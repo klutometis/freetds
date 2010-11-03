@@ -18,8 +18,9 @@
 (define-foreign-variable cs-succeed cs-retcode "CS_SUCCEED")
 (define-foreign-variable cs-force-exit int "CS_FORCE_EXIT")
 (define-foreign-variable cs-set int "CS_SET")
-(define-foreign-variable cs-message-cb int "CS_MESSAGE_CB")
-(define-foreign-variable cs-client-message-cb int "CS_CLIENTMSG_CB")
+(define-foreign-variable cs-message-callback int "CS_MESSAGE_CB")
+(define-foreign-variable cs-client-message-callback int "CS_CLIENTMSG_CB")
+(define-foreign-variable cs-server-message-callback int "CS_SERVERMSG_CB")
 (define-foreign-variable cs-unused int "CS_UNUSED")
 ;;; CS_RETCODE cs_ctx_alloc(CS_INT version, CS_CONTEXT ** ctx);
 ;; (define-external context cs-context*)
