@@ -68,7 +68,8 @@
                   cs-connection*
                   cs-int
                   cs-int
-                  cs-void*
+                  ;; cs-void*
+                  c-string
                   cs-int
                   (c-pointer cs-int)))
 
@@ -76,7 +77,8 @@
   (foreign-lambda cs-retcode
                   ct_connect
                   cs-connection*
-                  cs-char*
+                  ;; cs-char*
+                  c-string
                   cs-int))
 
 (define (freetds-error location message retcode . arguments)
@@ -113,9 +115,10 @@
   (freetds-error 'callback "holy shit!"))
 
 (let-location ((context cs-context*))
+  #;(define-external context cs-context* (null-pointer))
   (error-on-failure
    (lambda ()
-     (cs-ctx-alloc cs-version-100 (location context)))
+     (cs-ctx-alloc cs-version-100 #$context))
    'context-allocation
    "failed to allocate context")
 
@@ -125,7 +128,7 @@
    'context-initialization
    "failed to initialize context")
 
-  (error-on-failure
+  #;(error-on-failure
    (lambda ()
      (cs-config context
                 cs-set
@@ -136,7 +139,7 @@
    'set-cs-library-message-callback
    "failed to set client-server-library message-callback")
 
-  (error-on-failure
+  #;(error-on-failure
    (lambda ()
      (ct-callback context
                   (null-pointer)
@@ -146,7 +149,7 @@
    'set-client-library-message-callback
    "failed to set client-library message-callback")
 
-  (error-on-failure
+  #;(error-on-failure
    (lambda ()
      (ct-callback context
                   (null-pointer)
@@ -156,12 +159,12 @@
    'set-server-message-callback
    "failed to set server message-callback")
 
-  ;; host = ''
   (let-location ((connection cs-connection*))
+    #;(define-external connection cs-context* (null-pointer))
     (error-on-failure
      (lambda ()
        (ct-con-alloc context
-                     (location connection)))
+                     #$connection))
      'allocate-connection
      "failed to allocate a connection")
 
@@ -170,7 +173,7 @@
        (ct-con-props connection
                      cs-set
                      cs-username
-                     (location username)
+                     username
                      cs-nullterm
                      (null-pointer)))
      'set-username
@@ -181,7 +184,7 @@
        (ct-con-props connection
                      cs-set
                      cs-password
-                     (location password)
+                     password
                      cs-nullterm
                      (null-pointer)))
      'set-password
@@ -190,7 +193,7 @@
     (error-on-failure
      (lambda ()
        (ct-connect connection
-                   (location server)
-                   17))
+                   server
+                   (string-length server)))
      'create-connection
      "failed to connect to server")))
