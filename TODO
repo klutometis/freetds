@@ -1,4 +1,7 @@
 # -*- mode: org; -*-
+* TODO sqlite3
+  sqlite3 employs cond with =>; (define ((a b . c) d) ...); ad-hoc
+  foreign-lambdas; let-location; and #$.
 * DONE freetds configuration
   CLOSED: [2010-11-03 Wed 11:33]
   - CLOSING NOTE [2010-11-03 Wed 11:33] \\
