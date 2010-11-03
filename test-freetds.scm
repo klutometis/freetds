@@ -51,6 +51,13 @@
 
 (define cs-ctx-drop
   (foreign-lambda cs-retcode cs_ctx_drop cs-context*))
+
+(define ct-con-alloc
+  (foreign-lambda cs-retcode
+                  ct_con_alloc
+                  cs-context*
+                  (c-pointer cs-connection*)))
+
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
            (make-property-condition 'exn
@@ -126,4 +133,13 @@
                   cs-server-message-callback
                   cs_server_message_callback))
    'set-server-message-callback
-   "failed to set server message-callback"))
+   "failed to set server message-callback")
+
+  ;; host = '12.42.182.203'
+  (let-location ((connection cs-connection*))
+    (error-on-failure
+     (lambda ()
+       (ct-con-alloc context
+                     (location connection)))
+     'allocate connection
+     "failed to allocate a connection")))
