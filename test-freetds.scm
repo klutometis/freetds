@@ -19,6 +19,7 @@
 (define-foreign-variable cs-force-exit int "CS_FORCE_EXIT")
 (define-foreign-variable cs-set int "CS_SET")
 (define-foreign-variable cs-message-cb int "CS_MESSAGE_CB")
+(define-foreign-variable cs-client-message-cb int "CS_CLIENTMSG_CB")
 (define-foreign-variable cs-unused int "CS_UNUSED")
 ;;; CS_RETCODE cs_ctx_alloc(CS_INT version, CS_CONTEXT ** ctx);
 ;; (define-external context cs-context*)
@@ -42,6 +43,14 @@
                   cs-void*
                   cs-int
                   (c-pointer cs-int)))
+(define ct-callback
+  (foreign-lambda cs-retcode
+                  ct_callback
+                  cs-context*
+                  cs-connection*
+                  cs-int
+                  cs-int
+                  cs-void*))
 (define ct-exit
   (foreign-lambda cs-retcode ct_exit cs-context* cs-int))
 (define cs-ctx-drop
@@ -49,25 +58,30 @@
 ;; (foreign-declare "ret = cs_ctx_alloc(CS_VERSION_100, &context);")
 ;; (cs-ctx-alloc cs-version-100 context)
 ;; (set! context (null-pointer))
-(define (freetds-error location message . arguments)
+(define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
            (make-property-condition 'exn
                                     'location location
-                                    'message message
+                                    'message (format "(retcode ~a) ~a"
+                                                     retcode
+                                                     message)
                                     'arguments arguments)
-           (make-property-condition 'freetds))))
+           (make-property-condition 'freetds
+                                    'retcode retcode))))
 
 (define (error-on-failure thunk location message . arguments)
-  (if (not (= (thunk) cs-succeed))
-      (apply freetds-error location message arguments)))
+  (let ((retcode (thunk)))
+    (if (not (= retcode cs-succeed))
+        (apply freetds-error location message retcode arguments))))
 
 (define-external (cs_message_callback (cs-context* context)
                                       (cs-server-message* message))
     cs-retcode
   (freetds-error 'callback "holy shit!"))
 
-(define-external (cs_message_callback (cs-context* context) 
-                                      (cs-client-message* message))
+(define-external (ct_client_message_callback (cs-context* context) 
+                                             (cs-connection* connection)
+                                             (cs-client-message* message))
     cs-retcode
   (freetds-error 'callback "holy shit!"))
 
@@ -92,9 +106,15 @@
                 cs_message_callback
                 cs-unused
                 (null-pointer)))
-   'set-client-server-callback
+   'set-cs-message-callback
    "failed to set client-server-library message-callback")
 
   (error-on-failure
    (lambda ()
-     (ct-callback))))
+     (ct-callback context
+                  (null-pointer)
+                  cs-set
+                  cs-client-message-cb
+                  ct_client_message_callback))
+   'set-ct-client-message-callback
+   "failed to set client message-callback"))
