@@ -12,7 +12,9 @@
   and drop a context structure. (ctlib guide, p. 18)
   #+END_QUOTE
 * ODBC instead?
-  might be of more general interest; is the more general solution.
+  might be of more general interest; is the more general solution. but
+  we still need freetds as a transport mechanism for communicating
+  with mssql.
 * postgresql
   has things like:
 
