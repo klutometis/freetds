@@ -76,7 +76,7 @@
         (apply freetds-error location message retcode arguments))))
 
 (define-external (cs_message_callback (cs-context* context)
-                                      (cs-server-message* message))
+                                      (cs-client-message* message))
     cs-retcode
   (freetds-error 'callback "holy shit!"))
 
