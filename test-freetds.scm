@@ -8,6 +8,7 @@
 (define-foreign-type cs-client-message* (c-pointer "CS_CLIENTMSG"))
 (define-foreign-type cs-server-message* (c-pointer "CS_SERVERMSG"))
 (define-foreign-type cs-void* (c-pointer "CS_VOID"))
+(define-foreign-type cs-char* (c-pointer "CS_CHAR"))
 (define-foreign-type cs-int integer32)
 (define-foreign-type cs-retcode integer32)
 
@@ -20,6 +21,9 @@
 (define-foreign-variable cs-client-message-callback int "CS_CLIENTMSG_CB")
 (define-foreign-variable cs-server-message-callback int "CS_SERVERMSG_CB")
 (define-foreign-variable cs-unused int "CS_UNUSED")
+(define-foreign-variable cs-nullterm int "CS_NULLTERM")
+(define-foreign-variable cs-username int "CS_USERNAME")
+(define-foreign-variable cs-password int "CS_PASSWORD")
 
 (define cs-ctx-alloc
   (foreign-lambda cs-retcode cs_ctx_alloc cs-int (c-pointer cs-context*)))
@@ -57,6 +61,23 @@
                   ct_con_alloc
                   cs-context*
                   (c-pointer cs-connection*)))
+
+(define ct-con-props
+  (foreign-lambda cs-retcode
+                  ct_con_props
+                  cs-connection*
+                  cs-int
+                  cs-int
+                  cs-void*
+                  cs-int
+                  (c-pointer cs-int)))
+
+(define ct-connect
+  (foreign-lambda cs-retcode
+                  ct_connect
+                  cs-connection*
+                  cs-char*
+                  cs-int))
 
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
@@ -135,11 +156,41 @@
    'set-server-message-callback
    "failed to set server message-callback")
 
-  ;; host = '12.42.182.203'
+  ;; host = ''
   (let-location ((connection cs-connection*))
     (error-on-failure
      (lambda ()
        (ct-con-alloc context
                      (location connection)))
-     'allocate connection
-     "failed to allocate a connection")))
+     'allocate-connection
+     "failed to allocate a connection")
+
+    (error-on-failure
+     (lambda ()
+       (ct-con-props connection
+                     cs-set
+                     cs-username
+                     (location username)
+                     cs-nullterm
+                     (null-pointer)))
+     'set-username
+     "failed to set the username")
+
+    (error-on-failure
+     (lambda ()
+       (ct-con-props connection
+                     cs-set
+                     cs-password
+                     (location password)
+                     cs-nullterm
+                     (null-pointer)))
+     'set-password
+     "failed to set the password")
+
+    (error-on-failure
+     (lambda ()
+       (ct-connect connection
+                   (location server)
+                   17))
+     'create-connection
+     "failed to connect to server")))
