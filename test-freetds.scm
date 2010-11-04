@@ -25,6 +25,7 @@
 (define-foreign-variable cs-nullterm int "CS_NULLTERM")
 (define-foreign-variable cs-username int "CS_USERNAME")
 (define-foreign-variable cs-password int "CS_PASSWORD")
+(define-foreign-variable cs-language-command int "CS_LANG_CMD")
 
 (define cs-ctx-alloc
   (foreign-lambda cs-retcode cs_ctx_alloc cs-int (c-pointer cs-context*)))
@@ -87,6 +88,20 @@
                   ct_cmd_alloc
                   cs-connection*
                   (c-pointer cs-command*)))
+
+(define ct-command
+  (foreign-lambda cs-retcode
+                  ct_command
+                  cs-command*
+                  int
+                  (const cs-void*)
+                  cs-int
+                  cs-int))
+
+(define ct-send
+  (foreign-lambda cs-retcode
+                  ct_send
+                  cs-command*))
 
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
@@ -209,4 +224,20 @@
          (ct-cmd-alloc connection
                        #$command))
        'command-allocation
-       "failed to allocate command"))))
+       "failed to allocate command")
+
+      (error-on-failure
+       (lambda ()
+         (ct-command command
+                     cs-language-command
+                     #$"SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U'"
+                     cs-nullterm
+                     cs-unused))
+       'command-issue
+       "failed to issue command")
+
+      (error-on-failure
+       (lambda ()
+         (ct-send command))
+       'command-send
+       "failed to send command"))))
