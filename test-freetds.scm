@@ -5,6 +5,7 @@
 
 (define-foreign-type cs-context* (c-pointer "CS_CONTEXT"))
 (define-foreign-type cs-connection* (c-pointer "CS_CONNECTION"))
+(define-foreign-type cs-command* (c-pointer "CS_COMMAND"))
 (define-foreign-type cs-client-message* (c-pointer "CS_CLIENTMSG"))
 (define-foreign-type cs-server-message* (c-pointer "CS_SERVERMSG"))
 (define-foreign-type cs-void* (c-pointer "CS_VOID"))
@@ -81,6 +82,12 @@
                   c-string
                   cs-int))
 
+(define ct-cmd-alloc
+  (foreign-lambda cs-retcode
+                  ct_cmd_alloc
+                  cs-connection*
+                  (c-pointer cs-command*)))
+
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
            (make-property-condition 'exn
@@ -111,11 +118,10 @@
 (define-external (cs_server_message_callback (cs-context* context) 
                                              (cs-connection* connection)
                                              (cs-server-message* message))
-    cs-retcode
+  cs-retcode
   (freetds-error 'callback "holy shit!"))
 
 (let-location ((context cs-context*))
-  #;(define-external context cs-context* (null-pointer))
   (error-on-failure
    (lambda ()
      (cs-ctx-alloc cs-version-100 #$context))
@@ -155,12 +161,11 @@
                   (null-pointer)
                   cs-set
                   cs-server-message-callback
-                  cs_server_message_callback))
+                  #$cs_server_message_callback))
    'set-server-message-callback
    "failed to set server message-callback")
 
   (let-location ((connection cs-connection*))
-    #;(define-external connection cs-context* (null-pointer))
     (error-on-failure
      (lambda ()
        (ct-con-alloc context
@@ -196,4 +201,12 @@
                    server
                    (string-length server)))
      'create-connection
-     "failed to connect to server")))
+     "failed to connect to server")
+
+    (let-location ((command cs-command*))
+      (error-on-failure
+       (lambda ()
+         (ct-cmd-alloc connection
+                       #$command))
+       'command-allocation
+       "failed to allocate command"))))
