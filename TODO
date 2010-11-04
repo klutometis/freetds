@@ -12,9 +12,15 @@
 * TODO naming
   there is an inconsistency between constants (which we translate
   verbosely) and procedures (which we translate literally).
+
+  by reusing the constants (majuscules and all), we can avoid taking
+  responsibility for the sparseness and avoid translating things.
 * TODO CS_VERSION_X
   should this really be hard-coded; or does freetds handle this
   according to freetds.conf?
+
+  there is also the CS_TDS_VERSION connection-property, but I'm not
+  sure if that's the same thing.
 * DONE cs vs. ct
   CLOSED: [2010-11-02 Tue 16:25]
   client-server library vs. client library, apparently:
