@@ -1,4 +1,5 @@
-(use format foreigners lolevel)
+#!/usr/bin/env chicken-scheme
+(use format foreigners lolevel debug)
 (include "test-freetds-secret.scm")
 
 (foreign-declare "#include <ctpublic.h>")
@@ -102,6 +103,12 @@
   (foreign-lambda cs-retcode
                   ct_send
                   cs-command*))
+
+(define ct-results
+  (foreign-lambda cs-retcode
+                  ct_results
+                  cs-command*
+                  (c-pointer cs-int)))
 
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
@@ -240,4 +247,196 @@
        (lambda ()
          (ct-send command))
        'command-send
-       "failed to send command"))))
+       "failed to send command")
+
+      #|
+      See "Program Structure for Processing Results:"
+
+      while ct_results returns CS_SUCCEED
+          case CS_ROW_RESULT
+              ct_res_info to get the number of columns
+              for each column:
+                   ct_describe to get a description of the
+                       column
+                   ct_bind to bind the column to a program
+                       variable
+              end for
+              while ct_fetch returns CS_SUCCEED or
+                   CS_ROW_FAIL
+                   if CS_SUCCEED
+                       process the row
+                   else if CS_ROW_FAIL
+                       handle the row failure;
+                   end if
+              end while
+              switch on ct_fetch’s final return code
+                   case CS_END_DATA...
+                   case CS_CANCELED...
+                   case CS_FAIL...
+              end switch
+          end case
+          case CS_CURSOR_RESULT
+              ct_res_info to get the number of columns
+              for each column:
+                   ct_describe to get a description of the
+                       column
+                   ct_bind to bind the column to a program
+                       variable
+              end for
+          while ct_fetch returns CS_SUCCEED or
+               CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the row
+               else if CS_ROW_FAIL
+                   handle the row failure
+               end if
+               /* For update or delete only: */
+               if target row is not the row just fetched
+                   ct_keydata to specify the target row
+                       key
+               end if
+               /* End for update or delete only */
+               /* To send another cursor command: */
+               ct_cursor to initiate the cursor command
+               ct_param if command is update of some
+                   columns only
+               ct_send to send the command
+               while ct_results returns CS_SUCCEED
+                   (...process results...)
+               end while
+               /* End to send another cursor command */
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+      end case
+      case CS_PARAM_RESULT
+          ct_res_info to get the number of parameters
+          for each parameter:
+               ct_describe to get a description of the
+                   parameter
+               ct_bind to bind the parameter to a
+                   variable
+          end for
+          while ct_fetch returns CS_SUCCEED or
+               CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the row of parameters
+               else if CS_ROW_FAIL
+                   handle the failure
+               end if
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+      end case
+      case CS_STATUS_RESULT
+          ct_bind to bind the status to a program
+               variable
+          while ct_fetch returns CS_SUCCEED or
+               CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the return status
+               else if CS_ROW_FAIL
+                   handle the failure
+               end if
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+      end case
+      case CS_COMPUTE_RESULT
+          (optional: ct_compute_info to get bylist
+               length, bylist, or compute row id)
+          ct_res_info to get the number of columns
+          for each column:
+               ct_describe to get a description of the
+                   column
+               ct_bind to bind the column to a program
+                   variable
+               (optional: ct_compute_info to get the
+                   compute column id or the aggregate
+                   operator for the compute column)
+          end for
+          while ct_fetch returns CS_SUCCEED or
+               CS_ROW_FAIL
+               if CS_SUCCEED
+                   process the compute row
+               else if CS_ROW_FAIL
+                   handle the failure
+               end if
+          end while
+          switch on ct_fetch’s final return code
+               case CS_END_DATA...
+               case CS_CANCELED...
+               case CS_FAIL...
+          end switch
+      end case
+          case CS_MSG_RESULT
+              ct_res_info to get the message id
+              code to handle the message
+          end case
+          case CS_DESCRIBE_RESULT
+              ct_res_info to get the number of columns
+              for each column:
+                   ct_describe or ct_dyndesc to get a
+                       description
+              end for
+          end case
+          case CS_ROWFMT_RESULT
+              ct_res_info to get the number of columns
+              for each column:
+                   ct_describe to get a column description
+                   send the information on to the gateway
+                       client
+              end for
+          end case
+          case CS_COMPUTEFMT_RESULT
+              ct_res_info to get the number of columns
+              for each column:
+                   ct_describe to get a column description
+                   (if required:
+                       ct_compute_info for compute
+                           information
+                   end if required)
+                   send the information on to the gateway
+                       client
+              end for
+          end case
+          case CS_CMD_DONE
+              indicates a command’s results are completely
+                   processed
+          end case
+          case CS_CMD_SUCCEED
+              indicates the success of a command that
+                   returns no results
+          end case
+          case CS_CMD_FAIL
+              indicates a command failed
+          end case
+      end while
+      switch on ct_results’ final return code
+          case CS_END_RESULTS
+              indicates no more results
+          end case
+          case CS_CANCELED
+              indicates results were canceled
+          end case
+          case CS_FAIL
+              indicates ct_results failed
+          end case
+      end switch
+
+      |#
+      (let-location ((result-type int))
+        (let more-results ((result-status
+                            (ct-results command #$result-type)))
+          (select result-type
+            (((foreign-value "CS_ROW_RESULT" int))
+             (display 'omg-harro!))))))))
