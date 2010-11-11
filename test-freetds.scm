@@ -336,10 +336,14 @@
                             (location format)))
                          'ct_describe
                          "failed to describe column")
-                        (debug (char-vector->string
+                        (let ((name
+                               (char-vector->string
                                 (location format)
                                 data-format-name
-                                (foreign-value "CS_MAX_NAME" int)))))))))
+                                (data-format-name-length (location format))))
+                              (type
+                               (data-format-datatype (location format))))
+                          (cons name type))))))))
               (begin
                 ((foreign-lambda cs-retcode
                                  "ct_cmd_drop"
