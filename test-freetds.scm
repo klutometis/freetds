@@ -168,6 +168,29 @@
   (int usertype data-format-usertype)
   ((c-pointer "CS_LOCALE") locale data-format-locale))
 
+(define (char-null? char)
+  (char=? char #\nul))
+
+(define char-vector->string
+  (case-lambda
+   ((char-vector char-ref)
+    (char-vector->string char-ref +inf))
+   ((char-vector char-ref max-length)
+    ;; lazy to do the reversal; should we append instead of cons?
+    (define (chars->string chars)
+      (string-reverse (list->string chars)))
+    (let loop ((index 0)
+               (chars '())
+               (length max-length))
+      (if (zero? length)
+          (chars->string chars)
+          (let ((char (char-ref char-vector index)))
+            (if (char-null? char)
+                (chars->string chars)
+                (loop (+ index 1)
+                      (cons char chars)
+                      (- length 1)))))))))
+
 (let-location ((context cs-context*))
   (error-on-failure
    (lambda ()
