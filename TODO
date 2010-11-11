@@ -1,4 +1,20 @@
 # -*- mode: org; -*-
+* TODO connection structure
+  may need to allocate it with foreign-safe-lambda; although sqlite3
+  dispenses with this:
+
+  #+BEGIN_SRC scheme
+    (define (open-database path)
+      (check-string 'open-database path)
+      (let-location ([db sqlite3:database])
+        (cond
+          [((foreign-lambda sqlite3:status "sqlite3_open"
+              nonnull-c-string (c-pointer sqlite3:database))
+            (##sys#expand-home-path path) #$db)
+            => (abort-sqlite3-error 'open-database #f path)]
+          [else
+            db])))
+  #+END_SRC
 * TODO sqlite3
   sqlite3 employs cond with =>; (define ((a b . c) d) ...); ad-hoc
   foreign-lambdas; let-location; and #$.
