@@ -299,7 +299,24 @@
 
       (let-location ((result-type int))
         (let more-results ((result-status
-                            (ct-results command #$result-type)))
-          (select result-type
-            (((foreign-value "CS_ROW_RESULT" int))
-             (display 'omg-harro!))))))))
+                            (ct-results command (location result-type))))
+          (if (success? result-status)
+              (select result-type
+                (((foreign-value "CS_ROW_RESULT" int))
+                 (let-location ((column-count int))
+                   (error-on-failure
+                    (lambda ()
+                      ((foreign-lambda cs-retcode
+                                       "ct_res_info"
+                                       cs-command*
+                                       cs-int
+                                       cs-void*
+                                       cs-int
+                                       (c-pointer cs-int))
+                       command
+                       (foreign-value "CS_NUMDATA" int)
+                       (location column-count)
+                       (foreign-value "CS_UNUSED" int)
+                       (null-pointer)))
+                    'ct_res_info
+                    "failed to count columns")
