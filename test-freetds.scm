@@ -194,14 +194,14 @@
 (let-location ((context cs-context*))
   (error-on-failure
    (lambda ()
-     (cs-ctx-alloc cs-version-100 #$context))
-   'context-allocation
+     (cs-ctx-alloc cs-version-100 (location context)))
+   'cs_ctx_alloc
    "failed to allocate context")
 
   (error-on-failure
    (lambda ()
      (ct-init context cs-version-100))
-   'context-initialization
+   'ct_init
    "failed to initialize context")
 
   #;(error-on-failure
@@ -212,7 +212,7 @@
                 cs_message_callback
                 cs-unused
                 (null-pointer)))
-   'set-cs-library-message-callback
+   'cs_config
    "failed to set client-server-library message-callback")
 
   #;(error-on-failure
@@ -222,7 +222,7 @@
                   cs-set
                   cs-client-message-callback
                   cs_client_message_callback))
-   'set-client-library-message-callback
+   'ct_callback
    "failed to set client-library message-callback")
 
   #;(error-on-failure
@@ -231,16 +231,16 @@
                   (null-pointer)
                   cs-set
                   cs-server-message-callback
-                  #$cs_server_message_callback))
-   'set-server-message-callback
+                  (location cs_server_message_callback)))
+   'ct_callback
    "failed to set server message-callback")
 
   (let-location ((connection cs-connection*))
     (error-on-failure
      (lambda ()
        (ct-con-alloc context
-                     #$connection))
-     'allocate-connection
+                     (location connection)))
+     'ct_con_alloc
      "failed to allocate a connection")
 
     (error-on-failure
@@ -251,7 +251,7 @@
                      username
                      cs-nullterm
                      (null-pointer)))
-     'set-username
+     'ct_con_props
      "failed to set the username")
 
     (error-on-failure
@@ -262,7 +262,7 @@
                      password
                      cs-nullterm
                      (null-pointer)))
-     'set-password
+     'ct_con_props
      "failed to set the password")
 
     (error-on-failure
@@ -270,31 +270,31 @@
        (ct-connect connection
                    server
                    (string-length server)))
-     'create-connection
+     'ct_connect
      "failed to connect to server")
 
     (let-location ((command cs-command*))
       (error-on-failure
        (lambda ()
          (ct-cmd-alloc connection
-                       #$command))
-       'command-allocation
+                       (location command)))
+       'ct_cmd_alloc
        "failed to allocate command")
 
       (error-on-failure
        (lambda ()
          (ct-command command
                      cs-language-command
-                     #$"SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U'"
+                     (location "SELECT name, Id FROM SYSOBJECTS WHERE XTYPE = 'U'")
                      cs-nullterm
                      cs-unused))
-       'command-issue
+       'ct_command
        "failed to issue command")
 
       (error-on-failure
        (lambda ()
          (ct-send command))
-       'command-send
+       'ct_send
        "failed to send command")
 
       #|
