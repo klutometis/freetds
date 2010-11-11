@@ -127,9 +127,13 @@
            (make-property-condition 'freetds
                                     'retcode retcode))))
 
+(define (success? retcode)
+  (= retcode cs-succeed))
+
+;;; Should rather be called: `error-on-non-success'.
 (define (error-on-failure thunk location message . arguments)
   (let ((retcode (thunk)))
-    (if (not (= retcode cs-succeed))
+    (if (not (success? retcode))
         (apply freetds-error location message retcode arguments))))
 
 (define-external (cs_message_callback (cs-context* context)
