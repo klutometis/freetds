@@ -340,3 +340,28 @@
                                 (location format)
                                 data-format-name
                                 (foreign-value "CS_MAX_NAME" int)))))))))
+              (begin
+                ((foreign-lambda cs-retcode
+                                 "ct_cmd_drop"
+                                 cs-command*)
+                 command)
+                ((foreign-lambda cs-retcode
+                                 "ct_close"
+                                 cs-connection*
+                                 int)
+                 connection
+                 (foreign-value "CS_UNUSED" int))
+                ((foreign-lambda cs-retcode
+                                 "ct_con_drop"
+                                 cs-connection*)
+                 connection)
+                ((foreign-lambda cs-retcode
+                                 "ct_exit"
+                                 cs-context*
+                                 int)
+                 context
+                 (foreign-value "CS_UNUSED" int))
+                ((foreign-lambda cs-retcode
+                                 "cs_ctx_drop"
+                                 cs-context*)
+                 context))))))))
