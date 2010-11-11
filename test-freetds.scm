@@ -320,3 +320,23 @@
                        (null-pointer)))
                     'ct_res_info
                     "failed to count columns")
+                   (list-tabulate
+                    column-count
+                    (lambda (column)
+                      (let-location ((format (c-pointer "CS_DATAFMT")))
+                        (error-on-failure
+                         (lambda ()
+                           ((foreign-lambda cs-retcode
+                                            "ct_describe"
+                                            cs-command*
+                                            cs-int
+                                            (c-pointer "CS_DATAFMT"))
+                            command
+                            (+ column 1)
+                            (location format)))
+                         'ct_describe
+                         "failed to describe column")
+                        (debug (char-vector->string
+                                (location format)
+                                data-format-name
+                                (foreign-value "CS_MAX_NAME" int)))))))))
