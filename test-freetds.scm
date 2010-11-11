@@ -153,6 +153,21 @@
   cs-retcode
   (freetds-error 'callback "holy shit!"))
 
+(define-foreign-record-type
+  CS_DATAFMT
+  ;; 132 == CS_MAX_NAME
+  (char (name 132) data-format-name)
+  (int namelen data-format-name-length)
+  (int datatype data-format-datatype)
+  (int format data-format-format)
+  (int maxlength data-format-max-length)
+  (int scale data-format-scale)
+  (int precision data-format-precision)
+  (int status data-format-status)
+  (int count data-format-count)
+  (int usertype data-format-usertype)
+  ((c-pointer "CS_LOCALE") locale data-format-locale))
+
 (let-location ((context cs-context*))
   (error-on-failure
    (lambda ()
