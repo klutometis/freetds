@@ -1,5 +1,11 @@
 #!/usr/bin/env chicken-scheme
-(use format foreigners lolevel debug)
+(use format
+     foreigners
+     lolevel
+     debug
+     srfi-1
+     srfi-13)
+
 (include "test-freetds-secret.scm")
 
 (foreign-declare "#include <ctpublic.h>")
