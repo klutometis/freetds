@@ -154,19 +154,27 @@
   (freetds-error 'callback "holy shit!"))
 
 (define-foreign-record-type
-  CS_DATAFMT
+  (CS_DATAFMT CS_DATAFMT)
   ;; 132 == CS_MAX_NAME
   (char (name 132) data-format-name)
-  (int namelen data-format-name-length)
-  (int datatype data-format-datatype)
-  (int format data-format-format)
-  (int maxlength data-format-max-length)
-  (int scale data-format-scale)
-  (int precision data-format-precision)
-  (int status data-format-status)
-  (int count data-format-count)
-  (int usertype data-format-usertype)
-  ((c-pointer "CS_LOCALE") locale data-format-locale))
+  (int namelen data-format-name-length data-format-name-length-set!)
+  (int datatype data-format-datatype data-format-datatype-set!)
+  (int format data-format-format data-format-format-set!)
+  (int maxlength data-format-max-length data-format-max-length-set!)
+  (int scale data-format-scale data-format-scale-set!)
+  (int precision data-format-precision data-format-precision-set!)
+  (int status data-format-status data-format-status-set!)
+  (int count data-format-count data-format-count-set!)
+  (int usertype data-format-usertype data-format-usertype-set!)
+  ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
+
+(define-foreign-record-type
+  coldata
+  (char (value 1024) column-data-value column-data-value-set!)
+  (int valuelen column-data-valuelen column-data-valuelen-set!)
+  (int indicator column-data-indicator column-data-indicator-set!))
+
+(foreign-declare "typedef struct coldata * coldata_t;")
 
 (define (char-null? char)
   (char=? char #\nul))
@@ -336,7 +344,45 @@
                             (location format)))
                          'ct_describe
                          "failed to describe column")
-                        (let ((name
+                        #;(data-format-datatype-set!
+                         format
+                         (foreign-value "CS_CHAR_TYPE" int))
+                        #;(data-format-format-set!
+                         format
+                         (foreign-value "CS_FMT_NULLTERM" int))
+                        (let-location ((value c-string)
+                                       (valuelen int)
+                                       (indicator int)
+                                       #;(column-data (c-pointer "coldata_t")))
+                          ;; (debug (foreign-value "sizeof(coldata_t)" int))
+                          ;; (set! column-data (allocate (foreign-value "sizeof(coldata_t)" int)))
+                          ;; (column-data-valuelen-set! column-data 0)
+                          ;; (column-data-indicator-set! column-data 0)
+                          (error-on-failure
+                           (lambda ()
+                             ((foreign-lambda cs-retcode
+                                              "ct_bind"
+                                              cs-command*
+                                              int
+                                              (c-pointer "CS_DATAFMT")
+                                              cs-void*
+                                              (c-pointer "CS_INT")
+                                              (c-pointer "CS_SMALLINT"))
+                              command
+                              (+ column 1)
+                              (location format)
+                              (location value)
+                              (location valuelen)
+                              (location indicator)))
+                           'ct_bind
+                           "failed to bind statement")
+                          (debug valuelen)
+                          #;(debug (char-vector->string
+                                  column-data
+                                  column-data-value
+                                  (column-data-valuelen column-data)))
+                          #;(free column-data))
+                        #;(let ((name
                                (char-vector->string
                                 (location format)
                                 data-format-name

@@ -1,4 +1,7 @@
 # -*- mode: org; -*-
+* TODO low-level api
+  connect, describe, bind, fetch, close, etc. only have to describe
+  once per query, amirite?
 * TODO connection structure
   may need to allocate it with foreign-safe-lambda; although sqlite3
   dispenses with this:
