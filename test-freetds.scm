@@ -294,7 +294,7 @@
        (lambda ()
          (ct-command command
                      cs-language-command
-                     (location "SELECT Id FROM SYSOBJECTS WHERE XTYPE = 'U';")
+                     (location "SELECT refdate FROM SYSOBJECTS WHERE XTYPE = 'U';")
                      cs-nullterm
                      cs-unused))
        'ct_command
