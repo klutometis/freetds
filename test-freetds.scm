@@ -11,6 +11,9 @@
 
 (foreign-declare "#include <ctpublic.h>")
 
+(define-foreign-type CS_RETCODE integer32)
+(define-foreign-type CS_INT integer32)
+
 (define-foreign-type cs-context* (c-pointer "CS_CONTEXT"))
 (define-foreign-type cs-connection* (c-pointer "CS_CONNECTION"))
 (define-foreign-type cs-command* (c-pointer "CS_COMMAND"))
@@ -18,8 +21,6 @@
 (define-foreign-type cs-server-message* (c-pointer "CS_SERVERMSG"))
 (define-foreign-type cs-void* (c-pointer "CS_VOID"))
 (define-foreign-type cs-char* (c-pointer "CS_CHAR"))
-(define-foreign-type CS_RETCODE integer32)
-(define-foreign-type CS_INT integer32)
 (define-foreign-type cs-int integer32)
 (define-foreign-type cs-retcode integer32)
 
@@ -131,7 +132,7 @@
                                     'retcode retcode))))
 
 (define (success? retcode)
-  (= retcode cs-succeed))
+  (= retcode (foreign-value "CS_SUCCEED" CS_INT)))
 
 ;;; Should rather be called: `error-on-non-success'.
 (define (error-on-failure thunk location message . arguments)
@@ -289,53 +290,74 @@
    'ct_connect
    "failed to connect to server"))
 
+(define (allocate-command! connection* command**)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_cmd_alloc"
+                      (c-pointer "CS_CONNECTION")
+                      (c-pointer (c-pointer "CS_COMMAND")))
+      connection*
+      command**))
+   'ct_cmd_alloc
+   "failed to allocate command"))
+
+(define (command! command* type buffer* buffer-length option)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_command"
+                      (c-pointer "CS_COMMAND")
+                      CS_INT
+                      (const (c-pointer "CS_VOID"))
+                      CS_INT
+                      CS_INT)
+      command*
+      type
+      buffer*
+      buffer-length
+      option))
+   'ct_command
+   (format "failed to issue command ~a" buffer*)))
+
 (let ((version (foreign-value "CS_VERSION_100" int)))
-  (let-location ((context cs-context*))
-    (allocate-context! version (location context))
-    (initialize-context! context version)
-    (let-location ((connection cs-connection*))
-      (allocate-connection! context (location connection))
-      (connection-property-set! connection
+  (let-location ((context* (c-pointer "CS_CONTEXT")))
+    (allocate-context! version (location context*))
+    (initialize-context! context* version)
+    (let-location ((connection* (c-pointer "CS_CONNECTION")))
+      (allocate-connection! context* (location connection*))
+      (connection-property-set! connection*
                                 (foreign-value "CS_USERNAME" CS_INT)
                                 (location username)
                                 (foreign-value "CS_NULLTERM" CS_INT)
                                 (null-pointer))
-      (connection-property-set! connection
+      (connection-property-set! connection*
                                 (foreign-value "CS_PASSWORD" CS_INT)
                                 (location password)
                                 (foreign-value "CS_NULLTERM" CS_INT)
                                 (null-pointer))
-      (connect! connection
+      (connect! connection*
                 (location server)
                 (string-length server))
+      (let-location ((command* (c-pointer "CS_COMMAND")))
+        (allocate-command! connection* (location command*))
+        (let ((query "SELECT name, refdate FROM SYSOBJECTS WHERE XTYPE = 'U';"))
+          (command! command*
+                    (foreign-value "CS_LANG_CMD" CS_INT)
+                    (location query)
+                    (foreign-value "CS_NULLTERM" CS_INT)
+                    (foreign-value "CS_UNUSED" CS_INT)))
 
-      (let-location ((command cs-command*))
-        (error-on-failure
-         (lambda ()
-           (ct-cmd-alloc connection
-                         (location command)))
-         'ct_cmd_alloc
-         "failed to allocate command")
-
-        (error-on-failure
-         (lambda ()
-           (ct-command command
-                       cs-language-command
-                       (location "SELECT name, refdate FROM SYSOBJECTS WHERE XTYPE = 'U';")
-                       cs-nullterm
-                       cs-unused))
-         'ct_command
-         "failed to issue command")
 
         (error-on-failure
          (lambda ()
-           (ct-send command))
+           (ct-send command*))
          'ct_send
          "failed to send command")
 
         (let-location ((result-type int))
           (let more-results ((result-status
-                              (ct-results command (location result-type))))
+                              (ct-results command* (location result-type))))
             (if (success? result-status)
                 (begin
                   #;(debug 'oh-wirklich)
@@ -351,7 +373,7 @@
                                            cs-void*
                                            cs-int
                                            (c-pointer cs-int))
-                           command
+                           command*
                            (foreign-value "CS_NUMDATA" int)
                            (location column-count)
                            (foreign-value "CS_UNUSED" int)
@@ -371,7 +393,7 @@
                                                        cs-command*
                                                        cs-int
                                                        (c-pointer "CS_DATAFMT"))
-                                       command
+                                       command*
                                        (+ column 1)
                                        (location format)))
                                     'ct_describe
@@ -406,7 +428,7 @@
                                                            cs-void*
                                                            (c-pointer "CS_INT")
                                                            (c-pointer "CS_SMALLINT"))
-                                           command
+                                           command*
                                            (+ column 1)
                                            (location format)
                                            (location value)
@@ -439,35 +461,35 @@
                                                int
                                                int
                                                (c-pointer int))
-                               command
+                               command*
                                (foreign-value "CS_UNUSED" int)
                                (foreign-value "CS_UNUSED" int)
                                (foreign-value "CS_UNUSED" int)
                                (location rows-read)))
                              (debug (map string-trim-right values))))))))
-          (more-results (ct-results command (location result-type))))
+          (more-results (ct-results command* (location result-type))))
         (begin
           ((foreign-lambda cs-retcode
                            "ct_cmd_drop"
                            cs-command*)
-           command)
+           command*)
           ((foreign-lambda cs-retcode
                            "ct_close"
                            cs-connection*
                            int)
-           connection
+           connection*
            (foreign-value "CS_UNUSED" int))
           ((foreign-lambda cs-retcode
                            "ct_con_drop"
                            cs-connection*)
-           connection)
+           connection*)
           ((foreign-lambda cs-retcode
                            "ct_exit"
                            cs-context*
                            int)
-           context
+           context*
            (foreign-value "CS_UNUSED" int))
           ((foreign-lambda cs-retcode
                            "cs_ctx_drop"
                            cs-context*)
-           context)))))))))
+           context*)))))))))
