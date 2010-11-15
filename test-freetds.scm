@@ -13,112 +13,7 @@
 
 (define-foreign-type CS_RETCODE integer32)
 (define-foreign-type CS_INT integer32)
-
-(define-foreign-type cs-context* (c-pointer "CS_CONTEXT"))
-(define-foreign-type cs-connection* (c-pointer "CS_CONNECTION"))
-(define-foreign-type cs-command* (c-pointer "CS_COMMAND"))
-(define-foreign-type cs-client-message* (c-pointer "CS_CLIENTMSG"))
-(define-foreign-type cs-server-message* (c-pointer "CS_SERVERMSG"))
-(define-foreign-type cs-void* (c-pointer "CS_VOID"))
-(define-foreign-type cs-char* (c-pointer "CS_CHAR"))
-(define-foreign-type cs-int integer32)
-(define-foreign-type cs-retcode integer32)
-
-(define-foreign-variable cs-version-100 cs-int "CS_VERSION_100")
-(define-foreign-variable cs-fail cs-retcode "CS_FAIL")
-(define-foreign-variable cs-succeed cs-retcode "CS_SUCCEED")
-(define-foreign-variable cs-force-exit int "CS_FORCE_EXIT")
-(define-foreign-variable cs-set int "CS_SET")
-(define-foreign-variable cs-message-callback int "CS_MESSAGE_CB")
-(define-foreign-variable cs-client-message-callback int "CS_CLIENTMSG_CB")
-(define-foreign-variable cs-server-message-callback int "CS_SERVERMSG_CB")
-(define-foreign-variable cs-unused int "CS_UNUSED")
-(define-foreign-variable cs-nullterm int "CS_NULLTERM")
-(define-foreign-variable cs-username int "CS_USERNAME")
-(define-foreign-variable cs-password int "CS_PASSWORD")
-(define-foreign-variable cs-language-command int "CS_LANG_CMD")
-
-(define cs-ctx-alloc
-  (foreign-lambda cs-retcode cs_ctx_alloc cs-int (c-pointer cs-context*)))
-
-(define ct-init
-  (foreign-lambda cs-retcode ct_init cs-context* cs-int))
-
-(define cs-config
-  (foreign-lambda cs-retcode
-                  cs_config
-                  cs-context*
-                  cs-int
-                  cs-int
-                  cs-void*
-                  cs-int
-                  (c-pointer cs-int)))
-
-(define ct-callback
-  (foreign-lambda cs-retcode
-                  ct_callback
-                  cs-context*
-                  cs-connection*
-                  cs-int
-                  cs-int
-                  cs-void*))
-
-(define ct-exit
-  (foreign-lambda cs-retcode ct_exit cs-context* cs-int))
-
-(define cs-ctx-drop
-  (foreign-lambda cs-retcode cs_ctx_drop cs-context*))
-
-(define ct-con-alloc
-  (foreign-lambda cs-retcode
-                  ct_con_alloc
-                  cs-context*
-                  (c-pointer cs-connection*)))
-
-(define ct-con-props
-  (foreign-lambda cs-retcode
-                  ct_con_props
-                  cs-connection*
-                  cs-int
-                  cs-int
-                  ;; cs-void*
-                  c-string
-                  cs-int
-                  (c-pointer cs-int)))
-
-(define ct-connect
-  (foreign-lambda cs-retcode
-                  ct_connect
-                  cs-connection*
-                  ;; cs-char*
-                  c-string
-                  cs-int))
-
-(define ct-cmd-alloc
-  (foreign-lambda cs-retcode
-                  ct_cmd_alloc
-                  cs-connection*
-                  (c-pointer cs-command*)))
-
-(define ct-command
-  (foreign-lambda cs-retcode
-                  ct_command
-                  cs-command*
-                  int
-                  (const cs-void*)
-                  cs-int
-                  cs-int))
-
-(define ct-send
-  (foreign-lambda cs-retcode
-                  ct_send
-                  cs-command*))
-
-(define ct-results
-  (foreign-lambda cs-retcode
-                  ct_results
-                  cs-command*
-                  (c-pointer cs-int)))
+(define-foreign-type CS_SMALLINT short)
 
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
@@ -140,23 +35,6 @@
     (if (not (success? retcode))
         (apply freetds-error location message retcode arguments))))
 
-(define-external (cs_message_callback (cs-context* context)
-                                      (cs-client-message* message))
-    cs-retcode
-  (freetds-error 'callback "holy shit!"))
-
-(define-external (cs_client_message_callback (cs-context* context) 
-                                             (cs-connection* connection)
-                                             (cs-client-message* message))
-    cs-retcode
-  (freetds-error 'callback "holy shit!"))
-
-(define-external (cs_server_message_callback (cs-context* context) 
-                                             (cs-connection* connection)
-                                             (cs-server-message* message))
-  cs-retcode
-  (freetds-error 'callback "holy shit!"))
-
 (define-foreign-record-type
   (CS_DATAFMT CS_DATAFMT)
   ;; 132 == CS_MAX_NAME
@@ -171,14 +49,6 @@
   (int count data-format-count data-format-count-set!)
   (int usertype data-format-usertype data-format-usertype-set!)
   ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
-
-(define-foreign-record-type
-  coldata
-  (char (value 1024) column-data-value column-data-value-set!)
-  (int valuelen column-data-valuelen column-data-valuelen-set!)
-  (int indicator column-data-indicator column-data-indicator-set!))
-
-(foreign-declare "typedef struct coldata * coldata_t;")
 
 (define (char-null? char)
   (char=? char #\nul))
@@ -320,6 +190,113 @@
    'ct_command
    (format "failed to issue command ~a" buffer*)))
 
+(define (send! command*)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_send"
+                      (c-pointer "CS_COMMAND"))
+      command*))
+   'ct_send
+   "failed to send command"))
+
+(define (results! command* result-type*)
+  ((foreign-lambda CS_RETCODE
+                   "ct_results"
+                   (c-pointer "CS_COMMAND")
+                   (c-pointer "CS_INT"))
+   command*
+   result-type*))
+
+(define (results-info! command* type buffer* buffer-length out-length*)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_res_info"
+                      (c-pointer "CS_COMMAND")
+                      CS_INT
+                      (c-pointer "CS_VOID")
+                      CS_INT
+                      (c-pointer "CS_INT"))
+      command*
+      type
+      buffer*
+      buffer-length
+      out-length*))
+   'ct_res_info
+   (format "failed to get results info on ~a" type)))
+
+(define (results-info! command* type buffer* buffer-length out-length*)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_res_info"
+                      (c-pointer "CS_COMMAND")
+                      CS_INT
+                      (c-pointer "CS_VOID")
+                      CS_INT
+                      (c-pointer "CS_INT"))
+      command*
+      type
+      buffer*
+      buffer-length
+      out-length*))
+   'ct_res_info
+   "failed to get results info on ~a"))
+
+(define (describe! command* item data-format*)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_describe"
+                      (c-pointer "CS_COMMAND")
+                      CS_INT
+                      (c-pointer "CS_DATAFMT"))
+      command*
+      item
+      data-format*))
+   'ct_describe
+   "failed to describe column"))
+
+(define (bind! command*
+               item
+               data-format*
+               buffer*
+               copied*
+               indicator*)
+  (error-on-failure
+   (lambda ()
+     ((foreign-lambda CS_RETCODE
+                      "ct_bind"
+                      (c-pointer "CS_COMMAND")
+                      CS_INT
+                      (c-pointer "CS_DATAFMT")
+                      (c-pointer "CS_VOID")
+                      (c-pointer "CS_INT")
+                      (c-pointer "CS_SMALLINT"))
+      command*
+      item
+      data-format*
+      buffer*
+      copied*
+      indicator*))
+   'ct_bind
+   "failed to bind statement"))
+
+(define (fetch! command* type offset option rows-read*)
+  ((foreign-lambda CS_RETCODE
+                   "ct_fetch"
+                   (c-pointer "CS_COMMAND")
+                   CS_INT
+                   CS_INT
+                   CS_INT
+                   (c-pointer CS_INT))
+   command*
+   type
+   offset
+   option
+   rows-read*))
+
 (let ((version (foreign-value "CS_VERSION_100" int)))
   (let-location ((context* (c-pointer "CS_CONTEXT")))
     (allocate-context! version (location context*))
@@ -346,150 +323,83 @@
                     (foreign-value "CS_LANG_CMD" CS_INT)
                     (location query)
                     (foreign-value "CS_NULLTERM" CS_INT)
-                    (foreign-value "CS_UNUSED" CS_INT)))
+                    (foreign-value "CS_UNUSED" CS_INT))
+          
+          (send! command*)
 
-
-        (error-on-failure
-         (lambda ()
-           (ct-send command*))
-         'ct_send
-         "failed to send command")
-
-        (let-location ((result-type int))
-          (let more-results ((result-status
-                              (ct-results command* (location result-type))))
-            (if (success? result-status)
-                (begin
-                  #;(debug 'oh-wirklich)
-                  (select result-type
-                    (((foreign-value "CS_ROW_RESULT" int))
-                     (let-location ((column-count int))
-                       (error-on-failure
-                        (lambda ()
-                          ((foreign-lambda cs-retcode
-                                           "ct_res_info"
-                                           cs-command*
-                                           cs-int
-                                           cs-void*
-                                           cs-int
-                                           (c-pointer cs-int))
-                           command*
-                           (foreign-value "CS_NUMDATA" int)
-                           (location column-count)
-                           (foreign-value "CS_UNUSED" int)
-                           (null-pointer)))
-                        'ct_res_info
-                        "failed to count columns")
-                       (debug column-count)
-                       (let ((values
-                              (list-tabulate
-                               column-count
-                               (lambda (column)
-                                 (let-location ((format (c-pointer "CS_DATAFMT")))
-                                   (error-on-failure
-                                    (lambda ()
-                                      ((foreign-lambda cs-retcode
-                                                       "ct_describe"
-                                                       cs-command*
-                                                       cs-int
-                                                       (c-pointer "CS_DATAFMT"))
-                                       command*
-                                       (+ column 1)
-                                       (location format)))
-                                    'ct_describe
-                                    "failed to describe column")
-                                   (data-format-datatype-set!
-                                    (location format)
-                                    (foreign-value "CS_CHAR_TYPE" int))
-                                   (data-format-format-set!
-                                    (location format)
-                                    (foreign-value "CS_FMT_NULLTERM" int))
-                                   (data-format-max-length-set!
-                                    (location format)
-                                    1024)
-                                   (let ((value (make-string 1024)))
-                                     (let-location (#;(value c-string)
-                                                    #;(value int)
-                                                    (valuelen int)
-                                                    (indicator int)
-                                                    #;(column-data (c-pointer "coldata_t")))
-                                       #;(set! value (allocate (* (foreign-value "sizeof(char)" int) 1024)))
-                                       ;; (debug (foreign-value "sizeof(coldata_t)" int))
-                                       ;; (set! column-data (allocate (foreign-value "sizeof(coldata_t)" int)))
-                                       ;; (column-data-valuelen-set! column-data 0)
-                                       ;; (column-data-indicator-set! column-data 0)
-                                       (error-on-failure
-                                        (lambda ()
-                                          ((foreign-lambda cs-retcode
-                                                           "ct_bind"
-                                                           cs-command*
-                                                           int
-                                                           (c-pointer "CS_DATAFMT")
-                                                           cs-void*
-                                                           (c-pointer "CS_INT")
-                                                           (c-pointer "CS_SMALLINT"))
-                                           command*
-                                           (+ column 1)
-                                           (location format)
-                                           (location value)
-                                           (location valuelen)
-                                           (location indicator)))
-                                        'ct_bind
-                                        "failed to bind statement")
-                                       #;(debug 'oh-jes)
-                                       #;(free value)
-                                       #;(debug (char-vector->string
-                                       column-data
-                                       column-data-value
-                                       (column-data-valuelen column-data)))
-                                     #;(free column-data))
-                                   value)
-                                   #;(let ((name
-                                 (char-vector->string
-                                   (location format)
-                                   data-format-name
-                                   (data-format-name-length (location format))))
-                               (type
-                                   (data-format-datatype (location format))))
-                              (cons name type)))))))
-                    (let-location ((rows-read int))
-                      (while (success?
-                              ((foreign-lambda cs-retcode
-                                               "ct_fetch"
-                                               cs-command*
-                                               int
-                                               int
-                                               int
-                                               (c-pointer int))
-                               command*
-                               (foreign-value "CS_UNUSED" int)
-                               (foreign-value "CS_UNUSED" int)
-                               (foreign-value "CS_UNUSED" int)
-                               (location rows-read)))
-                             (debug (map string-trim-right values))))))))
-          (more-results (ct-results command* (location result-type))))
-        (begin
-          ((foreign-lambda cs-retcode
-                           "ct_cmd_drop"
-                           cs-command*)
-           command*)
-          ((foreign-lambda cs-retcode
-                           "ct_close"
-                           cs-connection*
-                           int)
-           connection*
-           (foreign-value "CS_UNUSED" int))
-          ((foreign-lambda cs-retcode
-                           "ct_con_drop"
-                           cs-connection*)
-           connection*)
-          ((foreign-lambda cs-retcode
-                           "ct_exit"
-                           cs-context*
-                           int)
-           context*
-           (foreign-value "CS_UNUSED" int))
-          ((foreign-lambda cs-retcode
-                           "cs_ctx_drop"
-                           cs-context*)
-           context*)))))))))
+          (let-location ((result-type CS_INT))
+            (let more-results ((result-status
+                                (results! command* (location result-type))))
+              (if (success? result-status)
+                  (begin
+                    (select result-type
+                      (((foreign-value "CS_ROW_RESULT" CS_INT))
+                       (let-location ((column-count CS_INT))
+                         (results-info! command*
+                                        (foreign-value "CS_NUMDATA" CS_INT)
+                                        (location column-count)
+                                        (foreign-value "CS_UNUSED" CS_INT)
+                                        (null-pointer))
+                         (debug column-count)
+                         (let ((values
+                                (list-tabulate
+                                 column-count
+                                 (lambda (column)
+                                   (let-location ((data-format*
+                                                   (c-pointer "CS_DATAFMT")))
+                                     (describe! command*
+                                                (+ column 1)
+                                                (location data-format*))
+                                     (data-format-datatype-set!
+                                      (location data-format*)
+                                      (foreign-value "CS_CHAR_TYPE" int))
+                                     (data-format-format-set!
+                                      (location data-format*)
+                                      (foreign-value "CS_FMT_NULLTERM" int))
+                                     (data-format-max-length-set!
+                                      (location data-format*)
+                                      1024)
+                                     (let ((value (make-string 1024)))
+                                       (let-location ((valuelen CS_INT)
+                                                      (indicator CS_SMALLINT))
+                                         (bind! command*
+                                                (+ column 1)
+                                                (location data-format*)
+                                                (location value)
+                                                (location valuelen)
+                                                (location indicator)))
+                                       value))))))
+                           (let-location ((rows-read int))
+                             (while (success?
+                                     (fetch! command*
+                                             (foreign-value "CS_UNUSED" int)
+                                             (foreign-value "CS_UNUSED" int)
+                                             (foreign-value "CS_UNUSED" int)
+                                             (location rows-read)))
+                                    (debug (map string-trim-right values))))))))
+                    (more-results (results! command* (location result-type))))
+                  (begin
+                    ((foreign-lambda CS_RETCODE
+                                     "ct_cmd_drop"
+                                     (c-pointer "CS_COMMAND"))
+                     command*)
+                    ((foreign-lambda CS_RETCODE
+                                     "ct_close"
+                                     (c-pointer "CS_CONNECTION")
+                                     CS_INT)
+                     connection*
+                     (foreign-value "CS_UNUSED" CS_INT))
+                    ((foreign-lambda CS_RETCODE
+                                     "ct_con_drop"
+                                     (c-pointer "CS_CONNECTION"))
+                     connection*)
+                    ((foreign-lambda CS_RETCODE
+                                     "ct_exit"
+                                     (c-pointer "CS_CONTEXT")
+                                     CS_INT)
+                     context*
+                     (foreign-value "CS_UNUSED" int))
+                    ((foreign-lambda CS_RETCODE
+                                     "cs_ctx_drop"
+                                     (c-pointer "CS_CONTEXT"))
+                     context*))))))))))
