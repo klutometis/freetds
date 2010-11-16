@@ -410,20 +410,7 @@
                                 (list-tabulate
                                  column-count
                                  (lambda (column)
-                                   (let ((data-format*
-                                          #;((foreign-primitive
-                                            (c-pointer "CS_DATAFMT")
-                                            ()
-                                            "C_return((CS_DATAFMT *) malloc(sizeof(CS_DATAFMT)));"))
-                                          (make-CS_DATAFMT*)))
-                                     #;(set-finalizer!
-                                      data-format*
-                                      (lambda (data-format*)
-                                        ((foreign-primitive
-                                          void
-                                          (((c-pointer "CS_DATAFMT") datafmt))
-                                          "free(datafmt);")
-                                         data-format*)))
+                                   (let ((data-format* (make-CS_DATAFMT*))) 
                                      (describe! command*
                                                 (+ column 1)
                                                 data-format*)
@@ -436,23 +423,7 @@
                                      (data-format-max-length-set!
                                       data-format*
                                       1024)
-                                     (let ((value*
-                                            #;(make-string
-                                             (data-format-max-length
-                                              data-format*))
-                                            #;((foreign-primitive
-                                              (c-pointer "CS_CHAR")
-                                              ()
-                                              "C_return((CS_CHAR *) malloc(1024 + 1));"))
-                                            (make-CS_CHAR* (+ 1024 1))))
-                                       #;(set-finalizer!
-                                        value*
-                                        (lambda (value*)
-                                          ((foreign-primitive
-                                            void
-                                            (((c-pointer "CS_CHAR") value))
-                                            "free(value);")
-                                           value*)))
+                                     (let ((value* (make-CS_CHAR* (+ 1024 1))))
                                        (let-location ((valuelen CS_INT)
                                                       (indicator CS_SMALLINT))
                                          (bind! command*
