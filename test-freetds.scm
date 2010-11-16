@@ -298,28 +298,6 @@
    option
    rows-read*))
 
-;;; should do malloc checking for NULL.
-#;(define make-CS_CHAR*
-  (case-lambda
-   (()
-    (make-CS_CHAR* 1))
-   ((length)
-    (let ((array*
-           ((foreign-primitive
-             (c-pointer "CS_CHAR")
-             ((int length))
-             "C_return((CS_CHAR *) malloc(length * CS_SIZEOF(CS_CHAR)));")
-            length)))
-      (set-finalizer!
-       array*
-       (lambda (array*)
-         ((foreign-primitive
-           void
-           (((c-pointer "CS_CHAR") array))
-           "free(array);")
-          array*)))
-      array*))))
-
 (define-syntax define-make-type*
   (er-macro-transformer
    (lambda (expression rename compare)
@@ -383,6 +361,8 @@
 
 (define-make-type* CS_CHAR)
 
+(define-make-type* CS_DATAFMT)
+
 (let ((version (foreign-value "CS_VERSION_100" int)))
   (let-location ((context* (c-pointer "CS_CONTEXT")))
     (allocate-context! version (location context*))
@@ -431,11 +411,12 @@
                                  column-count
                                  (lambda (column)
                                    (let ((data-format*
-                                          ((foreign-primitive
+                                          #;((foreign-primitive
                                             (c-pointer "CS_DATAFMT")
                                             ()
-                                            "C_return((CS_DATAFMT *) malloc(sizeof(CS_DATAFMT)));"))))
-                                     (set-finalizer!
+                                            "C_return((CS_DATAFMT *) malloc(sizeof(CS_DATAFMT)));"))
+                                          (make-CS_DATAFMT*)))
+                                     #;(set-finalizer!
                                       data-format*
                                       (lambda (data-format*)
                                         ((foreign-primitive
