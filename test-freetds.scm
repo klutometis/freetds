@@ -5,7 +5,8 @@
      debug
      srfi-1
      srfi-13
-     miscmacros)
+     miscmacros
+     matchable)
 
 (include "test-freetds-secret.scm")
 
@@ -297,6 +298,91 @@
    option
    rows-read*))
 
+;;; should do malloc checking for NULL.
+#;(define make-CS_CHAR*
+  (case-lambda
+   (()
+    (make-CS_CHAR* 1))
+   ((length)
+    (let ((array*
+           ((foreign-primitive
+             (c-pointer "CS_CHAR")
+             ((int length))
+             "C_return((CS_CHAR *) malloc(length * CS_SIZEOF(CS_CHAR)));")
+            length)))
+      (set-finalizer!
+       array*
+       (lambda (array*)
+         ((foreign-primitive
+           void
+           (((c-pointer "CS_CHAR") array))
+           "free(array);")
+          array*)))
+      array*))))
+
+(define-syntax define-make-type*
+  (er-macro-transformer
+   (lambda (expression rename compare)
+     (import matchable)
+     (match-let (((_ type) expression))
+       (let ((malloc
+              (conc "C_return(("
+                    type
+                    " *) malloc(length * sizeof("
+                    type
+                    ")));")))
+         (let* ((type* (string->symbol (conc type "*")))
+                (constructor (string->symbol (conc "make-" type*))))
+           (let ((%let (rename 'let))
+                 (%define (rename 'define))
+                 (%case-lambda (rename 'case-lambda))
+                 (%foreign-primitive (rename 'foreign-primitive))
+                 (%c-pointer (rename 'c-pointer))
+                 (%void (rename 'void))
+                 (%int (rename 'int))
+                 (%conc (rename 'conc))
+                 (%null-pointer? (rename 'null-pointer?))
+                 (%signal (rename 'signal))
+                 (%make-property-condition
+                  (rename 'make-property-condition))
+                 (%let (rename 'let))
+                 (%if (rename 'if))
+                 (%format (rename 'format))
+                 (%symbol->string (rename 'symbol->string))
+                 (%type (rename 'type))
+                 (%set-finalizer! (rename 'set-finalizer!))
+                 (%lambda (rename 'lambda)))
+             `(,%define ,constructor
+                   (,%case-lambda
+                    (()
+                     (,constructor 1))
+                    ((length)
+                     (,%let ((type*
+                              ((,%foreign-primitive
+                                (c-pointer ,(symbol->string type))
+                                ((int length))
+                                ,malloc)
+                               length)))
+                       (,%if (,%null-pointer? type*)
+                             (,%signal
+                              (,%make-property-condition
+                               'exn
+                               'location ',constructor
+                               'message (,%format "could not allocate ~a ~a(s)"
+                                                  length
+                                                  ',type))))
+                       (,%set-finalizer!
+                        type*
+                        (,%lambda (type*)
+                          ((,%foreign-primitive
+                            void
+                            (((c-pointer ,(symbol->string type)) type))
+                            "free(type);")
+                           type*)))
+                       type*)))))))))))
+
+(define-make-type* CS_CHAR)
+
 (let ((version (foreign-value "CS_VERSION_100" int)))
   (let-location ((context* (c-pointer "CS_CONTEXT")))
     (allocate-context! version (location context*))
@@ -373,11 +459,12 @@
                                             #;(make-string
                                              (data-format-max-length
                                               data-format*))
-                                            ((foreign-primitive
+                                            #;((foreign-primitive
                                               (c-pointer "CS_CHAR")
                                               ()
-                                              "C_return((CS_CHAR *) malloc(1024 + 1));"))))
-                                       (set-finalizer!
+                                              "C_return((CS_CHAR *) malloc(1024 + 1));"))
+                                            (make-CS_CHAR* (+ 1024 1))))
+                                       #;(set-finalizer!
                                         value*
                                         (lambda (value*)
                                           ((foreign-primitive
