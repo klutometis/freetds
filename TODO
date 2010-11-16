@@ -1,4 +1,13 @@
 # -*- mode: org; -*-
+* TODO allocating C structures
+  http://wiki.call-cc.org/allocating-c-structures-under-control-of-the-chicken-gc
+  http://wiki.call-cc.org/man/4/Data%20representation?action=show
+  - immediate vs. non-immediate
+  - 
+* TODO error-handling
+  should we have =allocate-context!=, etc. do implicit error-handling;
+  only to have e.g. =results!= omit it because we actually need the
+  return value?
 * TODO low-level api
   connect, describe, bind, fetch, close, etc. only have to describe
   once per query, amirite?

@@ -14,6 +14,7 @@
 (define-foreign-type CS_RETCODE integer32)
 (define-foreign-type CS_INT integer32)
 (define-foreign-type CS_SMALLINT short)
+(define-foreign-type CS_CHAR char)
 
 (define (freetds-error location message retcode . arguments)
   (signal (make-composite-condition
@@ -38,16 +39,16 @@
 (define-foreign-record-type
   (CS_DATAFMT CS_DATAFMT)
   ;; 132 == CS_MAX_NAME
-  (char (name 132) data-format-name)
-  (int namelen data-format-name-length data-format-name-length-set!)
-  (int datatype data-format-datatype data-format-datatype-set!)
-  (int format data-format-format data-format-format-set!)
-  (int maxlength data-format-max-length data-format-max-length-set!)
-  (int scale data-format-scale data-format-scale-set!)
-  (int precision data-format-precision data-format-precision-set!)
-  (int status data-format-status data-format-status-set!)
-  (int count data-format-count data-format-count-set!)
-  (int usertype data-format-usertype data-format-usertype-set!)
+  (CS_CHAR (name 132) data-format-name)
+  (CS_INT namelen data-format-name-length data-format-name-length-set!)
+  (CS_INT datatype data-format-datatype data-format-datatype-set!)
+  (CS_INT format data-format-format data-format-format-set!)
+  (CS_INT maxlength data-format-max-length data-format-max-length-set!)
+  (CS_INT scale data-format-scale data-format-scale-set!)
+  (CS_INT precision data-format-precision data-format-precision-set!)
+  (CS_INT status data-format-status data-format-status-set!)
+  (CS_INT count data-format-count data-format-count-set!)
+  (CS_INT usertype data-format-usertype data-format-usertype-set!)
   ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
 
 (define (char-null? char)
@@ -58,9 +59,8 @@
    ((char-vector char-ref)
     (char-vector->string char-ref +inf))
    ((char-vector char-ref max-length)
-    ;; lazy to do the reversal; should we append instead of cons?
     (define (chars->string chars)
-      (string-reverse (list->string chars)))
+      (reverse-list->string chars))
     (let loop ((index 0)
                (chars '())
                (length max-length))
@@ -340,43 +340,80 @@
                                         (location column-count)
                                         (foreign-value "CS_UNUSED" CS_INT)
                                         (null-pointer))
-                         (debug column-count)
                          (let ((values
                                 (list-tabulate
                                  column-count
                                  (lambda (column)
-                                   (let-location ((data-format*
-                                                   (c-pointer "CS_DATAFMT")))
+                                   (let ((data-format*
+                                          ((foreign-primitive
+                                            (c-pointer "CS_DATAFMT")
+                                            ()
+                                            "C_return((CS_DATAFMT *) malloc(sizeof(CS_DATAFMT)));"))))
+                                     (set-finalizer!
+                                      data-format*
+                                      (lambda (data-format*)
+                                        ((foreign-primitive
+                                          void
+                                          (((c-pointer "CS_DATAFMT") datafmt))
+                                          "free(datafmt);")
+                                         data-format*)))
                                      (describe! command*
                                                 (+ column 1)
-                                                (location data-format*))
+                                                data-format*)
                                      (data-format-datatype-set!
-                                      (location data-format*)
+                                      data-format*
                                       (foreign-value "CS_CHAR_TYPE" int))
                                      (data-format-format-set!
-                                      (location data-format*)
+                                      data-format*
                                       (foreign-value "CS_FMT_NULLTERM" int))
                                      (data-format-max-length-set!
-                                      (location data-format*)
+                                      data-format*
                                       1024)
-                                     (let ((value (make-string 1024)))
+                                     (let ((value*
+                                            #;(make-string
+                                             (data-format-max-length
+                                              data-format*))
+                                            ((foreign-primitive
+                                              (c-pointer "CS_CHAR")
+                                              ()
+                                              "C_return((CS_CHAR *) malloc(1024 + 1));"))))
+                                       (set-finalizer!
+                                        value*
+                                        (lambda (value*)
+                                          ((foreign-primitive
+                                            void
+                                            (((c-pointer "CS_CHAR") value))
+                                            "free(value);")
+                                           value*)))
                                        (let-location ((valuelen CS_INT)
                                                       (indicator CS_SMALLINT))
                                          (bind! command*
                                                 (+ column 1)
-                                                (location data-format*)
-                                                (location value)
+                                                data-format*
+                                                value*
                                                 (location valuelen)
                                                 (location indicator)))
-                                       value))))))
+                                       value*))))))
                            (let-location ((rows-read int))
                              (while (success?
                                      (fetch! command*
-                                             (foreign-value "CS_UNUSED" int)
-                                             (foreign-value "CS_UNUSED" int)
-                                             (foreign-value "CS_UNUSED" int)
+                                             (foreign-value "CS_UNUSED" CS_INT)
+                                             (foreign-value "CS_UNUSED" CS_INT)
+                                             (foreign-value "CS_UNUSED" CS_INT)
                                              (location rows-read)))
-                                    (debug (map string-trim-right values))))))))
+                                    (debug (map (lambda (value)
+                                                  (char-vector->string
+                                                   value
+                                                   (lambda (value i)
+                                                     ((foreign-primitive
+                                                       CS_CHAR
+                                                       (((c-pointer "CS_CHAR") value)
+                                                        (int i))
+                                                       "C_return(value[i]);")
+                                                      value
+                                                      i))
+                                                   1024))
+                                                values))))))))
                     (more-results (results! command* (location result-type))))
                   (begin
                     ((foreign-lambda CS_RETCODE
