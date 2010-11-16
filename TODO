@@ -1,4 +1,5 @@
 # -*- mode: org; -*-
+* TODO CS_CHAR*->string
 * TODO allocating C structures
   http://wiki.call-cc.org/allocating-c-structures-under-control-of-the-chicken-gc
   http://wiki.call-cc.org/man/4/Data%20representation?action=show
