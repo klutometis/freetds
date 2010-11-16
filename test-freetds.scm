@@ -74,6 +74,20 @@
                       (cons char chars)
                       (- length 1)))))))))
 
+(define CS_CHAR*->string
+  (case-lambda
+   ((vector) (CS_CHAR*->string vector +inf))
+   ((vector max-length)
+    (char-vector->string
+     vector
+     (lambda (vector i)
+       ((foreign-primitive
+         CS_CHAR
+         (((c-pointer "CS_CHAR") vector)
+          (int i))
+         "C_return(vector[i]);") vector i))
+     max-length))))
+
 (define (allocate-context! version context**)
   (error-on-failure
    (lambda ()
@@ -440,19 +454,7 @@
                                              (foreign-value "CS_UNUSED" CS_INT)
                                              (foreign-value "CS_UNUSED" CS_INT)
                                              (location rows-read)))
-                                    (debug (map (lambda (value)
-                                                  (char-vector->string
-                                                   value
-                                                   (lambda (value i)
-                                                     ((foreign-primitive
-                                                       CS_CHAR
-                                                       (((c-pointer "CS_CHAR") value)
-                                                        (int i))
-                                                       "C_return(value[i]);")
-                                                      value
-                                                      i))
-                                                   1024))
-                                                values))))))))
+                                    (debug (map CS_CHAR*->string values))))))))
                     (more-results (results! command* (location result-type))))
                   (begin
                     ((foreign-lambda CS_RETCODE
