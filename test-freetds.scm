@@ -5,6 +5,7 @@
      debug
      srfi-1
      srfi-13
+     srfi-19
      miscmacros
      matchable)
 
@@ -36,21 +37,6 @@
   (let ((retcode (thunk)))
     (if (not (success? retcode))
         (apply freetds-error location message retcode arguments))))
-
-(define-foreign-record-type
-  (CS_DATAFMT CS_DATAFMT)
-  ;; 132 == CS_MAX_NAME
-  (CS_CHAR (name 132) data-format-name)
-  (CS_INT namelen data-format-name-length data-format-name-length-set!)
-  (CS_INT datatype data-format-datatype data-format-datatype-set!)
-  (CS_INT format data-format-format data-format-format-set!)
-  (CS_INT maxlength data-format-max-length data-format-max-length-set!)
-  (CS_INT scale data-format-scale data-format-scale-set!)
-  (CS_INT precision data-format-precision data-format-precision-set!)
-  (CS_INT status data-format-status data-format-status-set!)
-  (CS_INT count data-format-count data-format-count-set!)
-  (CS_INT usertype data-format-usertype data-format-usertype-set!)
-  ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
 
 (define (char-null? char)
   (char=? char #\nul))
@@ -373,7 +359,41 @@
                          type*)))
                      type*)))))))))))
 
+(define-foreign-record-type
+  (CS_DATAFMT CS_DATAFMT)
+  ;; 132 == CS_MAX_NAME
+  (CS_CHAR (name 132) data-format-name)
+  (CS_INT namelen data-format-name-length data-format-name-length-set!)
+  (CS_INT datatype data-format-datatype data-format-datatype-set!)
+  (CS_INT format data-format-format data-format-format-set!)
+  (CS_INT maxlength data-format-max-length data-format-max-length-set!)
+  (CS_INT scale data-format-scale data-format-scale-set!)
+  (CS_INT precision data-format-precision data-format-precision-set!)
+  (CS_INT status data-format-status data-format-status-set!)
+  (CS_INT count data-format-count data-format-count-set!)
+  (CS_INT usertype data-format-usertype data-format-usertype-set!)
+  ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
+
+(define-foreign-record-type
+  (CS_DATETIME CS_DATETIME)
+  (CS_INT dtdays datetime-days)
+  (CS_INT dttime datetime-time))
+
+(define-foreign-record-type
+  (CS_DATEREC CS_DATEREC)
+  (CS_INT dateyear daterec-year)
+  (CS_INT datemonth daterec-month)
+  (CS_INT datedmonth daterec-dmonth)
+  (CS_INT datedyear daterec-dyear)
+  (CS_INT datedweek daterec-week)
+  (CS_INT datehour daterec-hour)
+  (CS_INT dateminute daterec-minute)
+  (CS_INT datesecond daterec-second)
+  (CS_INT datemsecond daterec-msecond)
+  (CS_INT datetzone daterec-timezone))
+
 (define-make-type* CS_DATAFMT)
+(define-make-type* CS_DATEREC)
 
 (define-syntax define-type-size
   (er-macro-transformer
@@ -397,7 +417,7 @@
          `(,%begin (,%define-make-type* ,type)
                    (,%define-type-size ,type)))))))
 
-(define type->make-type*/type-size '())
+(define type->make-type*/type-size/translate-type* '())
 
 (define-syntax define-make-type*/type-size/update-type-table!
   (er-macro-transformer
@@ -408,24 +428,89 @@
               (string->symbol (sprintf "make-~a*" type)))
              (type-size
               (string->symbol (sprintf "~a-size" type)))
+             (translate-type*
+              (string->symbol (sprintf "translate-~a*" type)))
              (type-type
               (sprintf "~a_TYPE" type)))
          (let ((%alist-cons (rename 'alist-cons))
                (%set! (rename 'set!))
-               (%type->make-type*/type-size
-                (rename 'type->make-type*/type-size))
-               (%cons (rename 'cons))
+               (%type->make-type*/type-size/translate-type*
+                (rename 'type->make-type*/type-size/translate-type*))
+               (%cons* (rename 'cons*))
                (%foreign-value (rename 'foreign-value))
                (%begin (rename 'begin))
                (%define-make-type*/type-size
                 (rename 'define-make-type*/type-size)))
            `(,%begin
              (,%define-make-type*/type-size ,type)
-             (,%set! ,%type->make-type*/type-size
-                     (,%alist-cons (,%foreign-value ,type-type int)
-                                   (,%cons ,make-type*
-                                           ,type-size)
-                                   ,%type->make-type*/type-size)))))))))
+             (,%set! ,%type->make-type*/type-size/translate-type*
+                     (,%alist-cons
+                      (,%foreign-value ,type-type int)
+                      (,%cons* ,make-type*
+                               ,type-size
+                               ,translate-type*)
+                      ,%type->make-type*/type-size/translate-type*)))))))))
+
+(define (translate-CS_BINARY* binary*)
+  (noop))
+(define (translate-CS_LONGBINARY* longbinary*)
+  (noop))
+(define (translate-CS_BIT* bit*)
+  (noop))
+(define (translate-CS_CHAR* char*)
+  (CS_CHAR*->string char*))
+(define (translate-CS_LONGCHAR* longchar*)
+  (noop))
+(define (translate-CS_VARCHAR* varchar*)
+  (noop))
+(define (translate-CS_DATETIME* datetime*)
+  (let ((daterec* (make-CS_DATEREC*)))
+    (error-on-failure
+     (lambda ()
+       ((foreign-lambda CS_RETCODE
+                        "cs_dt_crack"
+                        (c-pointer "CS_CONTEXT")
+                        CS_INT
+                        (c-pointer "CS_VOID")
+                        (c-pointer "CS_DATEREC"))
+        (null-pointer)
+        (foreign-value "CS_DATETIME_TYPE" CS_INT)
+        datetime*
+        daterec*))
+     'cs_dt_crack
+     "failed to crack date")
+    (make-date (* (daterec-msecond daterec*) 1000000)
+               (daterec-second daterec*)
+               (daterec-minute daterec*)
+               (daterec-hour daterec*)
+               (daterec-dmonth daterec*)
+               (add1 (daterec-month daterec*))
+               (daterec-year daterec*)
+               (daterec-timezone daterec*))))
+(define (translate-CS_DATETIME4* datetime4*)
+  (noop))
+(define (translate-CS_TINYINT* tinyint*)
+  (noop))
+(define (translate-CS_SMALLINT* smallint*)
+  (noop))
+(define (translate-CS_INT* int*)
+  (noop))
+(define (translate-CS_DECIMAL* decimal*)
+  (noop))
+(define (translate-CS_NUMERIC* numeric*)
+  (noop))
+(define (translate-CS_FLOAT* float*)
+  (noop))
+(define (translate-CS_REAL* real*)
+  (noop))
+(define (translate-CS_MONEY* money*)
+  (noop))
+(define (translate-CS_MONEY4* money4*)
+  (noop))
+(define (translate-CS_TEXT* text*)
+  (noop))
+(define (translate-CS_IMAGE* image*)
+  (noop))
 
 (define-make-type*/type-size/update-type-table! CS_BINARY)
 (define-make-type*/type-size/update-type-table! CS_LONGBINARY)
@@ -447,19 +532,19 @@
 (define-make-type*/type-size/update-type-table! CS_TEXT)
 (define-make-type*/type-size/update-type-table! CS_IMAGE)
 
-(define type->make-type*/type-size/default
+(define type->make-type*/type-size/translate-type*/default
   (case-lambda
    ((type)
-    (type->make-type*/type-size/default
+    (type->make-type*/type-size/translate-type*/default
      type
      (lambda ()
-       (freetds-error 'type->make-type*/type-size/default
+       (freetds-error 'type->make-type*/type-size/translate-type*/default
                       "encountered a strange type"
                       type))))
    ((type default)
     (let ((make-type*/type-size
            (alist-ref type
-                      type->make-type*/type-size)))
+                      type->make-type*/type-size/translate-type*)))
       (or make-type*/type-size (default))))))
 
 (let ((version (foreign-value "CS_VERSION_100" int)))
@@ -505,7 +590,7 @@
                                         (location column-count)
                                         (foreign-value "CS_UNUSED" CS_INT)
                                         (null-pointer))
-                         (let ((values
+                         (let ((values/translate-types*
                                 (list-tabulate
                                  column-count
                                  (lambda (column)
@@ -523,8 +608,8 @@
                                      ;;  data-format*
                                      ;;  1024)
                                      (match-let
-                                         (((make-type* . type-size)
-                                           (type->make-type*/type-size/default
+                                         (((make-type* type-size . translate-type*)
+                                           (type->make-type*/type-size/translate-type*/default
                                             (data-format-datatype
                                              data-format*))))
                                        (let* ((length
@@ -540,7 +625,7 @@
                                                   value*
                                                   (location valuelen)
                                                   (location indicator)))
-                                         value*)))))))
+                                         (cons value* translate-type*))))))))
                            (let-location ((rows-read int))
                              (while (success?
                                      (fetch! command*
@@ -548,7 +633,11 @@
                                              (foreign-value "CS_UNUSED" CS_INT)
                                              (foreign-value "CS_UNUSED" CS_INT)
                                              (location rows-read)))
-                                    (debug (map CS_CHAR*->string values))))))))
+                                    (debug (map (lambda (value/translate-type*)
+                                                  (match-let (((value . translate-type*)
+                                                               value/translate-type*))
+                                                    (translate-type* value)))
+                                                values/translate-types*))))))))
                     (more-results (results! command* (location result-type))))
                   (begin
                     ((foreign-lambda CS_RETCODE
