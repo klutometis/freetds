@@ -1,4 +1,7 @@
 # -*- mode: org; -*-
+* TODO segfault
+  should we not let garbage collection do the freeing? should we free
+  explicitly when done? is it inappropriate use of let-location?
 * TODO UNICHAR, etc.
   need special treatment?
 * TODO we need to do something about char vs. varchar vs. binary

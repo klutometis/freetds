@@ -476,64 +476,45 @@
                (daterec-year daterec*)
                (daterec-timezone daterec*))))
 
-(define (translate-CS_BINARY* binary*)
-  (noop))
+(define-syntax INT*->number
+  (er-macro-transformer
+   (lambda (expression rename compare)
+     (import matchable)
+     (match-let (((_ int* type) expression))
+       (let ((%foreign-safe-lambda*
+              (rename 'foreign-safe-lambda*)))
+         `((,%foreign-safe-lambda*
+            int
+            (((c-pointer ,type) i))
+            "C_return((int) *i);")
+           ,int*))))))
 
-(define (translate-CS_LONGBINARY* longbinary*)
-  (noop))
-
-(define (translate-CS_BIT* bit*)
-  (noop))
-
-(define (translate-CS_CHAR* char*)
-  (CS_CHAR*->string char*))
-
-(define (translate-CS_LONGCHAR* longchar*)
-  (noop))
-
-(define (translate-CS_VARCHAR* varchar*)
-  (noop))
-
-(define (translate-CS_DATETIME* datetime*)
-  (CS_DATETIME*->srfi-19-date datetime*
-                              (foreign-value "CS_DATETIME_TYPE" CS_INT)))
-
-(define (translate-CS_DATETIME4* datetime4*)
-  (CS_DATETIME*->srfi-19-date datetime*
-                              (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
-
+(define translate-CS_BINARY* noop)
+(define translate-CS_LONGBINARY* noop)
+(define translate-CS_BIT* noop)
+(define translate-CS_CHAR* CS_CHAR*->string)
+(define translate-CS_LONGCHAR* noop)
+(define translate-CS_VARCHAR* noop)
+(define translate-CS_DATETIME*
+  (cute CS_DATETIME*->srfi-19-date <>
+        (foreign-value "CS_DATETIME_TYPE" CS_INT)))
+(define translate-CS_DATETIME4*
+  (cute CS_DATETIME*->srfi-19-date <>
+        (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
 (define (translate-CS_TINYINT* tinyint*)
-  (noop))
-
+  (INT*->number tinyint* "CS_TINYINT"))
 (define (translate-CS_SMALLINT* smallint*)
-  (noop))
-
+  (INT*->number smallint* "CS_SMALLINT"))
 (define (translate-CS_INT* int*)
-  (noop))
-
-(define (translate-CS_DECIMAL* decimal*)
-  (noop))
-
-(define (translate-CS_NUMERIC* numeric*)
-  (noop))
-
-(define (translate-CS_FLOAT* float*)
-  (noop))
-
-(define (translate-CS_REAL* real*)
-  (noop))
-
-(define (translate-CS_MONEY* money*)
-  (noop))
-
-(define (translate-CS_MONEY4* money4*)
-  (noop))
-
-(define (translate-CS_TEXT* text*)
-  (noop))
-
-(define (translate-CS_IMAGE* image*)
-  (noop))
+  (INT*->number int* "CS_INT"))
+(define translate-CS_DECIMAL* noop)
+(define translate-CS_NUMERIC* noop)
+(define translate-CS_FLOAT* noop)
+(define translate-CS_REAL* noop)
+(define translate-CS_MONEY* noop)
+(define translate-CS_MONEY4* noop)
+(define translate-CS_TEXT* noop)
+(define translate-CS_IMAGE* noop)
 
 (define-make-type*/type-size/update-type-table! CS_BINARY)
 (define-make-type*/type-size/update-type-table! CS_LONGBINARY)
@@ -591,7 +572,7 @@
                 (string-length server))
       (let-location ((command* (c-pointer "CS_COMMAND")))
         (allocate-command! connection* (location command*))
-        (let ((query "SELECT name, refdate FROM SYSOBJECTS WHERE XTYPE = 'U';"))
+        (let ((query "SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U';"))
           (command! command*
                     (foreign-value "CS_LANG_CMD" CS_INT)
                     (location query)
