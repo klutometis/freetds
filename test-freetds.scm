@@ -60,20 +60,6 @@
                       (cons char chars)
                       (- length 1)))))))))
 
-(define CS_CHAR*->string
-  (case-lambda
-   ((vector) (CS_CHAR*->string vector +inf))
-   ((vector max-length)
-    (char-vector->string
-     vector
-     (lambda (vector i)
-       ((foreign-primitive
-         CS_CHAR
-         (((c-pointer "CS_CHAR") vector)
-          (int i))
-         "C_return(vector[i]);") vector i))
-     max-length))))
-
 (define (allocate-context! version context**)
   (error-on-failure
    (lambda ()
@@ -451,19 +437,21 @@
                                ,translate-type*)
                       ,%type->make-type*/type-size/translate-type*)))))))))
 
-(define (translate-CS_BINARY* binary*)
-  (noop))
-(define (translate-CS_LONGBINARY* longbinary*)
-  (noop))
-(define (translate-CS_BIT* bit*)
-  (noop))
-(define (translate-CS_CHAR* char*)
-  (CS_CHAR*->string char*))
-(define (translate-CS_LONGCHAR* longchar*)
-  (noop))
-(define (translate-CS_VARCHAR* varchar*)
-  (noop))
-(define (translate-CS_DATETIME* datetime*)
+(define CS_CHAR*->string
+  (case-lambda
+   ((vector) (CS_CHAR*->string vector +inf))
+   ((vector max-length)
+    (char-vector->string
+     vector
+     (lambda (vector i)
+       ((foreign-primitive
+         CS_CHAR
+         (((c-pointer "CS_CHAR") vector)
+          (int i))
+         "C_return(vector[i]);") vector i))
+     max-length))))
+
+(define (CS_DATETIME*->srfi-19-date datetime* type)
   (let ((daterec* (make-CS_DATEREC*)))
     (error-on-failure
      (lambda ()
@@ -474,7 +462,7 @@
                         (c-pointer "CS_VOID")
                         (c-pointer "CS_DATEREC"))
         (null-pointer)
-        (foreign-value "CS_DATETIME_TYPE" CS_INT)
+        type
         datetime*
         daterec*))
      'cs_dt_crack
@@ -487,28 +475,63 @@
                (add1 (daterec-month daterec*))
                (daterec-year daterec*)
                (daterec-timezone daterec*))))
-(define (translate-CS_DATETIME4* datetime4*)
+
+(define (translate-CS_BINARY* binary*)
   (noop))
+
+(define (translate-CS_LONGBINARY* longbinary*)
+  (noop))
+
+(define (translate-CS_BIT* bit*)
+  (noop))
+
+(define (translate-CS_CHAR* char*)
+  (CS_CHAR*->string char*))
+
+(define (translate-CS_LONGCHAR* longchar*)
+  (noop))
+
+(define (translate-CS_VARCHAR* varchar*)
+  (noop))
+
+(define (translate-CS_DATETIME* datetime*)
+  (CS_DATETIME*->srfi-19-date datetime*
+                              (foreign-value "CS_DATETIME_TYPE" CS_INT)))
+
+(define (translate-CS_DATETIME4* datetime4*)
+  (CS_DATETIME*->srfi-19-date datetime*
+                              (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
+
 (define (translate-CS_TINYINT* tinyint*)
   (noop))
+
 (define (translate-CS_SMALLINT* smallint*)
   (noop))
+
 (define (translate-CS_INT* int*)
   (noop))
+
 (define (translate-CS_DECIMAL* decimal*)
   (noop))
+
 (define (translate-CS_NUMERIC* numeric*)
   (noop))
+
 (define (translate-CS_FLOAT* float*)
   (noop))
+
 (define (translate-CS_REAL* real*)
   (noop))
+
 (define (translate-CS_MONEY* money*)
   (noop))
+
 (define (translate-CS_MONEY4* money4*)
   (noop))
+
 (define (translate-CS_TEXT* text*)
   (noop))
+
 (define (translate-CS_IMAGE* image*)
   (noop))
 
