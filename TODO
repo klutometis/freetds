@@ -1,4 +1,11 @@
 # -*- mode: org; -*-
+* TODO we need to do something about char vs. varchar vs. binary
+  the first should probably be null terminated; the second padded(?);
+  and the third might contain #\nul. we need a mechanism for
+  determining the length of the retrieved data. see =ex_display_dlen=?
+
+  might need some control of the =datafmt*= at the translator level;
+  i.e. pass it to the translators, too?
 * DONE TYPE-size
   CLOSED: [2010-11-16 Tue 17:45]
 * DONE CS_CHAR*->string
