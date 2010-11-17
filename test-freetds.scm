@@ -447,6 +447,21 @@
 (define-make-type*/type-size/update-type-table! CS_TEXT)
 (define-make-type*/type-size/update-type-table! CS_IMAGE)
 
+(define type->make-type*/type-size/default
+  (case-lambda
+   ((type)
+    (type->make-type*/type-size/default
+     type
+     (lambda ()
+       (freetds-error 'type->make-type*/type-size/default
+                      "encountered a strange type"
+                      type))))
+   ((type default)
+    (let ((make-type*/type-size
+           (alist-ref type
+                      type->make-type*/type-size)))
+      (or make-type*/type-size (default))))))
+
 (let ((version (foreign-value "CS_VERSION_100" int)))
   (let-location ((context* (c-pointer "CS_CONTEXT")))
     (allocate-context! version (location context*))
@@ -498,29 +513,34 @@
                                      (describe! command*
                                                 (+ column 1)
                                                 data-format*)
-                                     (debug (data-format-datatype data-format*)
-                                            (data-format-max-length data-format*)
-                                            CS_CHAR-size
-                                            CS_DATETIME-size)
-                                     (data-format-datatype-set!
-                                      data-format*
-                                      (foreign-value "CS_CHAR_TYPE" int))
+                                     ;; (data-format-datatype-set!
+                                     ;;  data-format*
+                                     ;;  (foreign-value "CS_CHAR_TYPE" int))
                                      (data-format-format-set!
                                       data-format*
                                       (foreign-value "CS_FMT_NULLTERM" int))
-                                     (data-format-max-length-set!
-                                      data-format*
-                                      1024)
-                                     (let ((value* (make-CS_CHAR* (+ 1024 1))))
-                                       (let-location ((valuelen CS_INT)
-                                                      (indicator CS_SMALLINT))
-                                         (bind! command*
-                                                (+ column 1)
-                                                data-format*
-                                                value*
-                                                (location valuelen)
-                                                (location indicator)))
-                                       value*))))))
+                                     ;; (data-format-max-length-set!
+                                     ;;  data-format*
+                                     ;;  1024)
+                                     (match-let
+                                         (((make-type* . type-size)
+                                           (type->make-type*/type-size/default
+                                            (data-format-datatype
+                                             data-format*))))
+                                       (let* ((length
+                                               (/ (data-format-max-length
+                                                   data-format*)
+                                                  type-size))
+                                              (value* (make-type* length)))
+                                         (let-location ((valuelen CS_INT)
+                                                        (indicator CS_SMALLINT))
+                                           (bind! command*
+                                                  (+ column 1)
+                                                  data-format*
+                                                  value*
+                                                  (location valuelen)
+                                                  (location indicator)))
+                                         value*)))))))
                            (let-location ((rows-read int))
                              (while (success?
                                      (fetch! command*
