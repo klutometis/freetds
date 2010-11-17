@@ -1,4 +1,6 @@
 # -*- mode: org; -*-
+* DONE TYPE-size
+  CLOSED: [2010-11-16 Tue 17:45]
 * DONE CS_CHAR*->string
   CLOSED: [2010-11-16 Tue 13:06]
 * TODO allocating C structures

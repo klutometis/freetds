@@ -318,17 +318,16 @@
      (import matchable)
      (match-let (((_ type) expression))
        (let ((malloc
-              (conc "C_return(("
-                    type
-                    " *) malloc(length * sizeof("
-                    type
-                    ")));")))
+              (sprintf "C_return((~a *) malloc(length * sizeof(~a)));"
+                      type
+                      type)))
          (let* ((type* (string->symbol (conc type "*")))
-                (constructor (string->symbol (conc "make-" type*))))
+                (make-type (string->symbol (conc "make-" type*))))
            (let ((%let (rename 'let))
                  (%define (rename 'define))
                  (%case-lambda (rename 'case-lambda))
                  (%foreign-primitive (rename 'foreign-primitive))
+                 (%foreign-value (rename 'foreign-value))
                  (%c-pointer (rename 'c-pointer))
                  (%void (rename 'void))
                  (%int (rename 'int))
@@ -343,39 +342,110 @@
                  (%symbol->string (rename 'symbol->string))
                  (%type (rename 'type))
                  (%set-finalizer! (rename 'set-finalizer!))
-                 (%lambda (rename 'lambda)))
-             `(,%define ,constructor
-                   (,%case-lambda
-                    (()
-                     (,constructor 1))
-                    ((length)
-                     (,%let ((type*
-                              ((,%foreign-primitive
-                                (c-pointer ,(symbol->string type))
-                                ((int length))
-                                ,malloc)
-                               length)))
-                       (,%if (,%null-pointer? type*)
-                             (,%signal
-                              (,%make-property-condition
-                               'exn
-                               'location ',constructor
-                               'message (,%format "could not allocate ~a ~a(s)"
-                                                  length
-                                                  ',type))))
-                       (,%set-finalizer!
-                        type*
-                        (,%lambda (type*)
-                          ((,%foreign-primitive
-                            void
-                            (((c-pointer ,(symbol->string type)) type))
-                            "free(type);")
-                           type*)))
-                       type*)))))))))))
-
-(define-make-type* CS_CHAR)
+                 (%lambda (rename 'lambda))
+                 (%begin (rename 'begin)))
+             `(,%define ,make-type
+                 (,%case-lambda
+                  (()
+                   (,make-type 1))
+                  ((length)
+                   (,%let ((type*
+                            ((,%foreign-primitive
+                              (c-pointer ,(symbol->string type))
+                              ((int length))
+                              ,malloc)
+                             length)))
+                     (,%if (,%null-pointer? type*)
+                           (,%signal
+                            (,%make-property-condition
+                             'exn
+                             'location ',make-type
+                             'message (,%format "could not allocate ~a ~a(s)"
+                                                length
+                                                ',type))))
+                     (,%set-finalizer!
+                      type*
+                      (,%lambda (type*)
+                        ((,%foreign-primitive
+                          void
+                          (((c-pointer ,(symbol->string type)) type))
+                          "free(type);")
+                         type*)))
+                     type*)))))))))))
 
 (define-make-type* CS_DATAFMT)
+
+(define-syntax define-type-size
+  (er-macro-transformer
+   (lambda (expression rename compare)
+     (import matchable)
+     (match-let (((_ type) expression))
+       (let ((size (sprintf "sizeof(~a)" type))
+             (type-size (string->symbol (conc type "-size"))))
+         (let ((%define (rename 'define))
+               (%foreign-value (rename 'foreign-value)))
+           `(,%define ,type-size (,%foreign-value ,size int))))))))
+
+(define-syntax define-make-type*/type-size
+  (er-macro-transformer
+   (lambda (expression rename compare)
+     (import matchable)
+     (match-let (((_ type) expression))
+       (let ((%define-make-type* (rename 'define-make-type*))
+             (%define-type-size (rename 'define-type-size))
+             (%begin (rename 'begin)))
+         `(,%begin (,%define-make-type* ,type)
+                   (,%define-type-size ,type)))))))
+
+(define type->make-type*/type-size '())
+
+(define-syntax define-make-type*/type-size/update-type-table!
+  (er-macro-transformer
+   (lambda (expression rename compare)
+     (import matchable)
+     (match-let (((_ type) expression))
+       (let ((make-type*
+              (string->symbol (sprintf "make-~a*" type)))
+             (type-size
+              (string->symbol (sprintf "~a-size" type)))
+             (type-type
+              (sprintf "~a_TYPE" type)))
+         (let ((%alist-cons (rename 'alist-cons))
+               (%set! (rename 'set!))
+               (%type->make-type*/type-size
+                (rename 'type->make-type*/type-size))
+               (%cons (rename 'cons))
+               (%foreign-value (rename 'foreign-value))
+               (%begin (rename 'begin))
+               (%define-make-type*/type-size
+                (rename 'define-make-type*/type-size)))
+           `(,%begin
+             (,%define-make-type*/type-size ,type)
+             (,%set! ,%type->make-type*/type-size
+                     (,%alist-cons (,%foreign-value ,type-type int)
+                                   (,%cons ,make-type*
+                                           ,type-size)
+                                   ,%type->make-type*/type-size)))))))))
+
+(define-make-type*/type-size/update-type-table! CS_BINARY)
+(define-make-type*/type-size/update-type-table! CS_LONGBINARY)
+(define-make-type*/type-size/update-type-table! CS_BIT)
+(define-make-type*/type-size/update-type-table! CS_CHAR)
+(define-make-type*/type-size/update-type-table! CS_LONGCHAR)
+(define-make-type*/type-size/update-type-table! CS_VARCHAR)
+(define-make-type*/type-size/update-type-table! CS_DATETIME)
+(define-make-type*/type-size/update-type-table! CS_DATETIME4)
+(define-make-type*/type-size/update-type-table! CS_TINYINT)
+(define-make-type*/type-size/update-type-table! CS_SMALLINT)
+(define-make-type*/type-size/update-type-table! CS_INT)
+(define-make-type*/type-size/update-type-table! CS_DECIMAL)
+(define-make-type*/type-size/update-type-table! CS_NUMERIC)
+(define-make-type*/type-size/update-type-table! CS_FLOAT)
+(define-make-type*/type-size/update-type-table! CS_REAL)
+(define-make-type*/type-size/update-type-table! CS_MONEY)
+(define-make-type*/type-size/update-type-table! CS_MONEY4)
+(define-make-type*/type-size/update-type-table! CS_TEXT)
+(define-make-type*/type-size/update-type-table! CS_IMAGE)
 
 (let ((version (foreign-value "CS_VERSION_100" int)))
   (let-location ((context* (c-pointer "CS_CONTEXT")))
@@ -428,6 +498,10 @@
                                      (describe! command*
                                                 (+ column 1)
                                                 data-format*)
+                                     (debug (data-format-datatype data-format*)
+                                            (data-format-max-length data-format*)
+                                            CS_CHAR-size
+                                            CS_DATETIME-size)
                                      (data-format-datatype-set!
                                       data-format*
                                       (foreign-value "CS_CHAR_TYPE" int))
