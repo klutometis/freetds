@@ -1,4 +1,6 @@
 # -*- mode: org; -*-
+* TODO UNICHAR, etc.
+  need special treatment?
 * TODO we need to do something about char vs. varchar vs. binary
   the first should probably be null terminated; the second padded(?);
   and the third might contain #\nul. we need a mechanism for
