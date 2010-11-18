@@ -1,4 +1,97 @@
 # -*- mode: org; -*-
+* TODO varchar, varbinary
+  See CS_VARBINARY and CS_VARCHAR; they have their own datatypes.
+* TODO determining whether data is NULL
+  should we zero the memory first? maybe it doesn't touch it. never
+  mind; see guide, p. 55:
+
+  #+BEGIN_QUOTE
+  When a row containing NULL values is fetched from a server,
+  Client-Library substitutes specified “null substitution values” for
+  the null columns when copying the row data to program variables.
+
+  #+BEGIN_EXAMPLE
+  Destination type    Null substitution value
+  CS_BINARY_TYPE      Empty array
+  CS_VARBINARY_TYPE   Empty array
+  CS_BIT_TYPE         0
+  CS_CHAR_TYPE        Empty string
+  CS_VARCHAR_TYPE     Empty string
+  CS_DATE_TYPE        4 bytes of zeros
+  CS_DATETIME_TYPE    8 bytes of zeros
+  CS_DATETIME4_TYPE   4 bytes of zeros
+  CS_TINYINT_TYPE     0
+  CS_SMALLINT_TYPE    0
+  CS_INT_TYPE         0
+  CS_DECIMAL_TYPE     0.0 (with default scale and precision)
+  CS_NUMERIC_TYPE     0.0 (with default scale and precision)
+  CS_FLOAT_TYPE       0.0
+  CS_REAL_TYPE        0.0
+  CS_MONEY_TYPE       $0.0
+  CS_MONEY4_TYPE      $0.0
+  CS_BOUNDARY_TYPE    Empty string
+  CS_SENSITIVITY_TYPE Empty string
+  CS_TEXT_TYPE        Empty string
+  CS_TIME_TYPE        4 bytes of zeros
+  CS_IMAGE_TYPE       Empty array
+  #+END_EXAMPLE
+
+  To change null substitution values, an application can call the
+  CS-Library routine =cs_setnull=.
+  #+END_QUOTE
+* TODO bigint, nchar, nvarchar, ntext, boolean, sensitivity, etc.
+  it appears as though my types-table is incomplete (for MSSQL, at
+  least); see:
+  [[http://msdn.microsoft.com/en-us/library/aa258271(SQL.80).aspx]].
+
+  additionally, things like boolean aren't actually supported by
+  MSSQL; also, claims bit is ``Integer data with either a 1 or 0
+  value.'' should we really do the boolean extrapolation?
+
+  interesting for adding binary data:
+  [[http://msdn.microsoft.com/en-us/library/ms187403.aspx]]
+
+  #+BEGIN_SRC c
+    #define CS_ILLEGAL_TYPE     TDS_STATIC_CAST(CS_INT, -1)
+    #define CS_CHAR_TYPE        TDS_STATIC_CAST(CS_INT, 0)
+    #define CS_BINARY_TYPE      TDS_STATIC_CAST(CS_INT, 1)
+    #define CS_LONGCHAR_TYPE    TDS_STATIC_CAST(CS_INT, 2)
+    #define CS_LONGBINARY_TYPE  TDS_STATIC_CAST(CS_INT, 3)
+    #define CS_TEXT_TYPE        TDS_STATIC_CAST(CS_INT, 4)
+    #define CS_IMAGE_TYPE       TDS_STATIC_CAST(CS_INT, 5)
+    #define CS_TINYINT_TYPE     TDS_STATIC_CAST(CS_INT, 6)
+    #define CS_SMALLINT_TYPE    TDS_STATIC_CAST(CS_INT, 7)
+    #define CS_INT_TYPE         TDS_STATIC_CAST(CS_INT, 8)
+    #define CS_REAL_TYPE        TDS_STATIC_CAST(CS_INT, 9)
+    #define CS_FLOAT_TYPE       TDS_STATIC_CAST(CS_INT, 10)
+    #define CS_BIT_TYPE         TDS_STATIC_CAST(CS_INT, 11)
+    #define CS_DATETIME_TYPE    TDS_STATIC_CAST(CS_INT, 12)
+    #define CS_DATETIME4_TYPE   TDS_STATIC_CAST(CS_INT, 13)
+    #define CS_MONEY_TYPE       TDS_STATIC_CAST(CS_INT, 14)
+    #define CS_MONEY4_TYPE      TDS_STATIC_CAST(CS_INT, 15)
+    #define CS_NUMERIC_TYPE     TDS_STATIC_CAST(CS_INT, 16)
+    #define CS_DECIMAL_TYPE     TDS_STATIC_CAST(CS_INT, 17)
+    #define CS_VARCHAR_TYPE     TDS_STATIC_CAST(CS_INT, 18)
+    #define CS_VARBINARY_TYPE   TDS_STATIC_CAST(CS_INT, 19)
+    #define CS_LONG_TYPE        TDS_STATIC_CAST(CS_INT, 20)
+    #define CS_SENSITIVITY_TYPE TDS_STATIC_CAST(CS_INT, 21)
+    #define CS_BOUNDARY_TYPE    TDS_STATIC_CAST(CS_INT, 22)
+    #define CS_VOID_TYPE        TDS_STATIC_CAST(CS_INT, 23)
+    #define CS_USHORT_TYPE      TDS_STATIC_CAST(CS_INT, 24)
+    #define CS_UNICHAR_TYPE     TDS_STATIC_CAST(CS_INT, 25)
+    #define CS_BLOB_TYPE        TDS_STATIC_CAST(CS_INT, 26)
+    #define CS_DATE_TYPE        TDS_STATIC_CAST(CS_INT, 27)
+    #define CS_TIME_TYPE        TDS_STATIC_CAST(CS_INT, 28)
+    #define CS_UNITEXT_TYPE     TDS_STATIC_CAST(CS_INT, 29)
+    #define CS_BIGINT_TYPE      TDS_STATIC_CAST(CS_INT, 30)
+    #define CS_USMALLINT_TYPE   TDS_STATIC_CAST(CS_INT, 31)
+    #define CS_UINT_TYPE        TDS_STATIC_CAST(CS_INT, 32)
+    #define CS_UBIGINT_TYPE     TDS_STATIC_CAST(CS_INT, 33)
+    #define CS_XML_TYPE         TDS_STATIC_CAST(CS_INT, 34)
+    #define CS_UNIQUE_TYPE      TDS_STATIC_CAST(CS_INT, 40)
+    
+    #define CS_USER_TYPE        TDS_STATIC_CAST(CS_INT, 100)
+  #+END_SRC
 * TODO segfault
   should we not let garbage collection do the freeing? should we free
   explicitly when done? is it inappropriate use of let-location?
