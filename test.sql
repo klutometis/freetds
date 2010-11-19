@@ -1,12 +1,12 @@
 USE testDatabase;
 IF EXISTS(SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'test') DROP TABLE test;
 CREATE TABLE test (
-       binary binary(256),
-       varbinary varbinary(256),
+       binary binary(16),
+       varbinary varbinary(16),
        -- boolean boolean,
        bit bit,
-       char char,
-       varchar varchar(256),
+       char char(16),
+       varchar varchar(16),
        datetime datetime,
        smalldatetime smalldatetime,
        tinyint tinyint,
@@ -22,13 +22,31 @@ CREATE TABLE test (
        -- sensitivity sensitivity,
        text text,
        image image,
-       nchar nchar,
-       nvarchar nvarchar(256),
+       nchar nchar(16),
+       nvarchar nvarchar(16),
        ntext ntext
        );
-INSERT INTO test (binary, varbinary, bit, varchar) VALUES (
-       CONVERT(BINARY(256), '8'),
-       82,
+INSERT INTO test VALUES (
+       65536,
+       65536,
        1,
-       CONVERT(VARCHAR(256), 'harro')
+       'harro',
+       'harro',
+       34000,
+       34000,
+       12,
+       12,
+       12,
+       12,
+       12.0,
+       12.0,
+       12.0,
+       12.0,
+       $12.00,
+       $12.00,
+       'oeutnh',
+       'oeutnh',
+       'oeutnh',
+       N'oeöutnh',
+       N'日本語'
        );

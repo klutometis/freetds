@@ -1,60 +1,92 @@
 # -*- mode: org; -*-
-* TODO per-type dataformat-configurers
-* TODO varbinary
-  we don't seem to be able to extract the length reliably out of the
-  first byte.
-* TODO malloc etiquette
-  http://drj11.wordpress.com/2007/04/08/sizeofchar-is-1/
-* TODO null-padding
-  seems to result in retrievable binary data
-* TODO text, image
-  might need special processing with =ct_get_data=.
-* TODO binary
-  bizarre: the first two bytes of the binary data appear to signify
-  the length of the data. is that why =ex_display_dlen= gives it =(2 *
-  column->maxlength) + 2=? double, because =CS_INT= is double the size
-  of =CS_CHAR=, and they're putting it into a =CS_CHAR= buffer. (we're
-  not, are we?) still, the 2 byte header is interesting; i can't find
-  any documentation about it.
-
-  #+BEGIN_QUOTE
-  CS_VARBINARY does not correspond to any Adaptive Server type, and
-  Open Client routines do not return CS_VARBINARY_TYPE.  CS_VARBINARY
-  is a structure that holds a byte array and its length:
+* TODO numeric, decimal
+  how to convert from the array to a number?
 
   #+BEGIN_SRC c
-    typedef struct_cs_varybin
+    typedef struct _cs_numeric
     {
-      CS_SMALLINT             len;
-      CS_BYTE                 array[CS_MAX_CHAR];
-    } CS_VARBINARY;
+      unsigned char precision;
+      unsigned char scale;
+      unsigned char array[CS_MAX_NUMLEN];
+    } CS_NUMERIC;
   #+END_SRC
 
-  CS_VARBINARY is provided so that programmers can write non-C
-  programming language veneers to be written for Open Client. Typical
-  client applications do not use CS_VARBINARY.
-  #+END_QUOTE
-
-  oh, duh: it's the =CS_VARBINARY= structure in
-  vector-form. =CS_VARCHAR= is similar, apparently.
-
-  no! this is only because i did an illegitimate cast to VARBINARY on
-  the server side! normally, this header doesn't exist!
-* online sybase manuals
-  [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.help.sdk_12.5.1.ctref/html/ctref/title.htm][reference manual]], [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.help.ocs_12.5.1.clcprgde/html/clcprgde/title.htm][programmer's guide]].
-* TODO =ct_data_info=
-  might give us some data on the actual length of values.
-* TODO =ct_get_data=
-  might it solve the =CS_ROW_FAIL= on binary values?
+  =cs_calc= or =cs_convert=, maybe? see the quote under [[varbinary]];
+  it's a base-256 little-endian with sign in the first position.
+* TODO datatype utilities
+  manual, p. 2-194:
 
   #+BEGIN_QUOTE
-  That is, an application can call =ct_get_data= with a =buflen= of 0,
-  and then call =ct_data_info= to retrieve the descriptor. This
-  technique is useful when an application needs to determine the
-  length of a text or image value before retrieving it.
+  - cs_calc, which performs arithmetic operations on decimal, money,
+    and numeric datatypes
+  - cs_cmp, which compares datetime, decimal, money, and numeric
+    datatypes
+  - cs_convert, which converts a data value from one datatype to
+    another
+  - cs_dt_crack, which converts a machine readable datetime value into
+    a user-accessible format
+  - cs_dt_info, which sets or retrieves language-specific datetime
+    information
+  - cs_strcmp, which compares two strings
   #+END_QUOTE
-* TODO varchar, varbinary
-  See CS_VARBINARY and CS_VARCHAR; they have their own datatypes.
+* TODO varbinary
+# <<varbinary>>
+  we don't seem to be able to extract the length reliably out of the
+  first byte.
+
+  check this:
+
+  #+BEGIN_QUOTE
+  CS_LONGBINARY and CS_VARBINARY do not correspond to any SQL Server
+  datatypes. Specifically, CS_VARBINARY does not correspond to the SQL
+  Server datatype varbinary.
+  #+END_QUOTE
+
+  CS_VARBINARY != varbinary; and yet it returns this type! it pads
+  nulls on the right; but how do we distinguish between end-of-data
+  and nulls? =ct_data_info=? need some kind of I/O structure for that,
+  though, specific to chunked transfer of text and image.
+
+  from the [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.infocenter.dc32840.1500/html/ctref/ctref361.htm][blurb]] on numeric:
+
+  #+BEGIN_QUOTE
+  array is a base-256 representation of the numeric value. The byte at
+  index 0 denotes the sign, where 0 (or a byte value of 00000000)
+  represents a positive number, and 1 (or a byte value of 0000001)
+  represents a negative number. The remaining bytes, 1-n, represent
+  the base-256 number in little-endian order, with the byte at index 1
+  being the most significant byte.
+
+  The number of bytes used in array is based on the selected precision
+  of the numeric. Mapping is performed based on the precision of the
+  numeric to the length of array that is used.
+  #+END_QUOTE
+
+  this looks, indeed, like what's going on with varbinary.
+
+  check [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.infocenter.dc32840.1500/html/ctref/ctref361.htm][this]] out:
+
+  #+BEGIN_QUOTE
+  CS_BINARY corresponds to the Adaptive Server types binary and
+  varbinary. That is, Client-Library interprets both the server binary
+  and varbinary types as CS_BINARY. For example, ct_describe returns
+  CS_BINARY_TYPE when describing a result column that has the server
+  datatype varbinary.
+
+  CS_BINARY is defined as: 
+  typedef unsigned char    CS_BINARY;
+
+  Although CS_VARBINARY variables are used to store variable-length
+  values, CS_VARBINARY is considered to be a fixed-length type. This
+  means that an application does not typically need to provide
+  Client-Library with the length of a CS_VARBINARY variable. For
+  example, ct_bind ignores the value of datafmt−>maxlength when
+  binding to a CS_VARBINARY variable.
+  #+END_QUOTE
+* TODO text, image
+  might need special processing with =ct_get_data=; indeed: i assume
+  that if the length of the text or image is greater than maxlength,
+  it issues a CS_ROW_FAIL and forces chunked retrieval.
 * TODO determining whether data is NULL
   should we zero the memory first? maybe it doesn't touch it. never
   mind; see guide, p. 55:
@@ -93,7 +125,74 @@
   To change null substitution values, an application can call the
   CS-Library routine =cs_setnull=.
   #+END_QUOTE
-* TODO bigint, nchar, nvarchar, ntext, boolean, sensitivity, etc.
+* DONE low-level api
+  CLOSED: [2010-11-18 Thu 18:18]
+  - CLOSING NOTE [2010-11-18 Thu 18:18] \\
+    elements are there in the test.
+  connect, describe, bind, fetch, close, etc. only have to describe
+  once per query, amirite?
+* DONE unicode
+  CLOSED: [2010-11-18 Thu 18:10]
+  - CLOSING NOTE [2010-11-18 Thu 18:10] \\
+    fixed by prefixing the string with N! see http://lists.ibiblio.org/pipermail/freetds/2010q2/026029.html
+  not fixed, apparently, even with utf8; is the problem putting it in
+  the database (test.sql), pulling it or both?
+
+  don't forget the whole issue with locale vs. server locale,
+  etc. shit.
+* DONE malloc etiquette
+  CLOSED: [2010-11-18 Thu 18:13]
+  - CLOSING NOTE [2010-11-18 Thu 18:13] \\
+    got rid of the cast; still don't have pointers, though.
+  http://drj11.wordpress.com/2007/04/08/sizeofchar-is-1/
+* DONE null-padding
+  CLOSED: [2010-11-18 Thu 18:13]
+  - CLOSING NOTE [2010-11-18 Thu 18:13] \\
+    is this desirable, btw?
+  seems to result in retrievable binary data
+* DONE binary
+  CLOSED: [2010-11-18 Thu 18:13]
+  - CLOSING NOTE [2010-11-18 Thu 18:14] \\
+    binary works; still haven't cracked varbinary. does it matter? the
+    guide claims it's unused.
+  bizarre: the first two bytes of the binary data appear to signify
+  the length of the data. is that why =ex_display_dlen= gives it =(2 *
+  column->maxlength) + 2=? double, because =CS_INT= is double the size
+  of =CS_CHAR=, and they're putting it into a =CS_CHAR= buffer. (we're
+  not, are we?) still, the 2 byte header is interesting; i can't find
+  any documentation about it. (no: =CS_BINARY= is =CS_CHAR=!)
+
+  (don't read too much into =ex_display_dlen=, by the way; since it
+  has to do with representation not storage; the + 2 on binary could
+  well be the addition of "0x", for all i know.)
+
+  #+BEGIN_QUOTE
+  CS_VARBINARY does not correspond to any Adaptive Server type, and
+  Open Client routines do not return CS_VARBINARY_TYPE.  CS_VARBINARY
+  is a structure that holds a byte array and its length:
+
+  #+BEGIN_SRC c
+    typedef struct_cs_varybin
+    {
+      CS_SMALLINT             len;
+      CS_BYTE                 array[CS_MAX_CHAR];
+    } CS_VARBINARY;
+  #+END_SRC
+
+  CS_VARBINARY is provided so that programmers can write non-C
+  programming language veneers to be written for Open Client. Typical
+  client applications do not use CS_VARBINARY.
+  #+END_QUOTE
+
+  oh, duh: it's the =CS_VARBINARY= structure in
+  vector-form. =CS_VARCHAR= is similar, apparently.
+
+  no: this is only because i did an illegitimate cast to VARBINARY on
+  a BINARY column! normally, this header doesn't exist.
+* DONE bigint, nchar, nvarchar, ntext, boolean, sensitivity, etc.
+  CLOSED: [2010-11-18 Thu 18:15]
+  - CLOSING NOTE [2010-11-18 Thu 18:15] \\
+    seem to have taken care of these.
   it appears as though my types-table is incomplete (for MSSQL, at
   least); see:
   [[http://msdn.microsoft.com/en-us/library/aa258271(SQL.80).aspx]].
@@ -146,12 +245,16 @@
     
     #define CS_USER_TYPE        TDS_STATIC_CAST(CS_INT, 100)
   #+END_SRC
-* TODO segfault
+* DONE segfault
+  CLOSED: [2010-11-18 Thu 18:15]
+  - CLOSING NOTE [2010-11-18 Thu 18:15] \\
+    hasn't occurred lately (fingers crossed).
   should we not let garbage collection do the freeing? should we free
   explicitly when done? is it inappropriate use of let-location?
-* TODO UNICHAR, etc.
-  need special treatment?
-* TODO we need to do something about char vs. varchar vs. binary
+* DONE we need to do something about char vs. varchar vs. binary
+  CLOSED: [2010-11-18 Thu 18:16]
+  - CLOSING NOTE [2010-11-18 Thu 18:16] \\
+    null-padding
   the first should probably be null terminated; the second padded(?);
   and the third might contain #\nul. we need a mechanism for
   determining the length of the retrieved data. see =ex_display_dlen=?
@@ -162,35 +265,16 @@
   CLOSED: [2010-11-16 Tue 17:45]
 * DONE CS_CHAR*->string
   CLOSED: [2010-11-16 Tue 13:06]
-* TODO allocating C structures
+* DONE allocating C structures
+  CLOSED: [2010-11-18 Thu 18:16]
+  - CLOSING NOTE [2010-11-18 Thu 18:16] \\
+    the make-type* macro-hack
   http://wiki.call-cc.org/allocating-c-structures-under-control-of-the-chicken-gc
   http://wiki.call-cc.org/man/4/Data%20representation?action=show
   - immediate vs. non-immediate
   - 
-* TODO error-handling
-  should we have =allocate-context!=, etc. do implicit error-handling;
-  only to have e.g. =results!= omit it because we actually need the
-  return value?
-* TODO low-level api
-  connect, describe, bind, fetch, close, etc. only have to describe
-  once per query, amirite?
-* TODO connection structure
-  may need to allocate it with foreign-safe-lambda; although sqlite3
-  dispenses with this:
-
-  #+BEGIN_SRC scheme
-    (define (open-database path)
-      (check-string 'open-database path)
-      (let-location ([db sqlite3:database])
-        (cond
-          [((foreign-lambda sqlite3:status "sqlite3_open"
-              nonnull-c-string (c-pointer sqlite3:database))
-            (##sys#expand-home-path path) #$db)
-            => (abort-sqlite3-error 'open-database #f path)]
-          [else
-            db])))
-  #+END_SRC
-* TODO handle results
+* DONE handle results
+  CLOSED: [2010-11-18 Thu 18:17]
   From "Program Structure for Processing Results:"
 
   #+BEGIN_EXAMPLE
@@ -375,7 +459,8 @@
       end case
   end switch
   #+END_EXAMPLE
-* TODO sqlite3
+* DONE sqlite3
+  CLOSED: [2010-11-18 Thu 18:17]
   sqlite3 employs cond with =>; (define ((a b . c) d) ...); ad-hoc
   foreign-lambdas; let-location; and #$.
 * DONE freetds configuration
@@ -385,13 +470,17 @@
     wrapper; let's include a secret that doesn't get checked in.
   we're setting the name and password hard-codedly; how do we defer to
   freetds.conf?
-* TODO naming
+* DONE naming
+  CLOSED: [2010-11-18 Thu 18:17]
   there is an inconsistency between constants (which we translate
   verbosely) and procedures (which we translate literally).
 
   by reusing the constants (majuscules and all), we can avoid taking
   responsibility for the sparseness and avoid translating things.
-* TODO CS_VERSION_X
+* DONE CS_VERSION_X
+  CLOSED: [2010-11-18 Thu 18:17]
+  - CLOSING NOTE [2010-11-18 Thu 18:17] \\
+    use a default.
   should this really be hard-coded; or does freetds handle this
   according to freetds.conf?
 
@@ -406,22 +495,60 @@
   include at least two calls to CS-Library, because they must allocate
   and drop a context structure. (ctlib guide, p. 18)
   #+END_QUOTE
-* ODBC instead?
-  might be of more general interest; is the more general solution. but
-  we still need freetds as a transport mechanism for communicating
-  with mssql.
-* postgresql
-  has things like:
+* CANCELED per-type dataformat-configurers
+  CLOSED: [2010-11-18 Thu 18:12]
+* CANCELED =ct_data_info=
+  CLOSED: [2010-11-18 Thu 18:14]
+  - CLOSING NOTE [2010-11-18 Thu 18:15] \\
+    vide [[ct_get_data][infra]].
+  might give us some data on the actual length of values.
+* CANCELED =ct_get_data=
+# <<ct_get_data>>
+  CLOSED: [2010-11-18 Thu 18:14]
+  - CLOSING NOTE [2010-11-18 Thu 18:14] \\
+    nah; might need this for full support of text and image, though.
+  might it solve the =CS_ROW_FAIL= on binary values?
+
+  #+BEGIN_QUOTE
+  That is, an application can call =ct_get_data= with a =buflen= of 0,
+  and then call =ct_data_info= to retrieve the descriptor. This
+  technique is useful when an application needs to determine the
+  length of a text or image value before retrieving it.
+  #+END_QUOTE
+* CANCELED varchar, varbinary
+  CLOSED: [2010-11-18 Thu 18:15]
+  See CS_VARBINARY and CS_VARCHAR; they have their own datatypes.
+* CANCELED UNICHAR, etc.
+  CLOSED: [2010-11-18 Thu 18:15]
+  - CLOSING NOTE [2010-11-18 Thu 18:16] \\
+    apparently not
+  need special treatment?
+* CANCELED error-handling
+  CLOSED: [2010-11-18 Thu 18:16]
+  should we have =allocate-context!=, etc. do implicit error-handling;
+  only to have e.g. =results!= omit it because we actually need the
+  return value?
+* CANCELED connection structure
+  CLOSED: [2010-11-18 Thu 18:16]
+  may need to allocate it with foreign-safe-lambda; although sqlite3
+  dispenses with this:
 
   #+BEGIN_SRC scheme
-    (when (PQisBusy conn-ptr)
-          (thread-wait-for-i/o! conn-fd #:input)
-          (loop))
+    (define (open-database path)
+      (check-string 'open-database path)
+      (let-location ([db sqlite3:database])
+        (cond
+          [((foreign-lambda sqlite3:status "sqlite3_open"
+              nonnull-c-string (c-pointer sqlite3:database))
+            (##sys#expand-home-path path) #$db)
+            => (abort-sqlite3-error 'open-database #f path)]
+          [else
+            db])))
   #+END_SRC
-
-  which can happen, apparently, even with synchronous calls (at least
-  in dblib).
-* TODO cursors?
+* CANCELED cursors?
+  CLOSED: [2010-11-18 Thu 18:17]
+  - CLOSING NOTE [2010-11-18 Thu 18:17] \\
+    not right now
   #+BEGIN_QUOTE
   Because relational databases are oriented toward sets, no concept of
   next row exists, meaning that you cannot operate on an individual
@@ -458,6 +585,23 @@
   #+BEGIN_QUOTE
   ctlib	(all)	ct_cursor	OK	Initiate a Client-Library cursor command.
   #+END_QUOTE
+* online sybase manuals
+  [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.help.sdk_12.5.1.ctref/html/ctref/title.htm][reference manual]], [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.help.ocs_12.5.1.clcprgde/html/clcprgde/title.htm][programmer's guide]].
+* ODBC instead?
+  might be of more general interest; is the more general solution. but
+  we still need freetds as a transport mechanism for communicating
+  with mssql.
+* postgresql
+  has things like:
+
+  #+BEGIN_SRC scheme
+    (when (PQisBusy conn-ptr)
+          (thread-wait-for-i/o! conn-fd #:input)
+          (loop))
+  #+END_SRC
+
+  which can happen, apparently, even with synchronous calls (at least
+  in dblib).
 * dblib
   Client-Library is a library designed to accommodate cursors and
   other advanced features. [as opposed to DB-Library, etc.]

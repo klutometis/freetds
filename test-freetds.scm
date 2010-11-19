@@ -294,12 +294,11 @@
      (import matchable)
      (match-let (((_ type) expression))
        (let ((malloc
-              (sprintf #;"C_return((~a *) malloc(length * sizeof(~a)));"
-                       "C_return(malloc(length * (sizeof(~a))));"
+              (sprintf "C_return(malloc(length * (sizeof(~a))));"
                       type
                       type)))
-         (let* ((type* (string->symbol (conc type "*")))
-                (make-type (string->symbol (conc "make-" type*))))
+         (let* ((type* (string->symbol (sprintf "~a*" type)))
+                (make-type (string->symbol (sprintf "make-~a" type*))))
            (let ((%let (rename 'let))
                  (%define (rename 'define))
                  (%case-lambda (rename 'case-lambda))
@@ -404,7 +403,7 @@
      (import matchable)
      (match-let (((_ type) expression))
        (let ((size (sprintf "sizeof(~a)" type))
-             (type-size (string->symbol (conc type "-size"))))
+             (type-size (string->symbol (sprintf "~a-size" type))))
          (let ((%define (rename 'define))
                (%foreign-value (rename 'foreign-value)))
            `(,%define ,type-size (,%foreign-value ,size int))))))))
@@ -531,7 +530,8 @@
                         (((c-pointer "CS_VARBINARY") varbinary))
                         "C_return(varbinary->array);")
                        varbinary*)
-                      (varbinary-length varbinary*)))
+                      (varbinary-length varbinary*)
+                      #;256))
 ;;; boolean transformation?
 (define (translate-CS_BIT* bit* length)
   (not (zero? (CS_INT*->number bit* "CS_BIT"))))
@@ -563,7 +563,8 @@
 (define translate-CS_REAL* noop)
 (define translate-CS_MONEY* noop)
 (define translate-CS_MONEY4* noop)
-(define translate-CS_TEXT* noop)
+(define (translate-CS_TEXT* text* length)
+  (CS_CHAR*->string text* length))
 (define translate-CS_IMAGE* noop)
 
 (define-make-type*/type-size/update-type-table! CS_BINARY)
@@ -656,34 +657,22 @@
                                      (describe! command*
                                                 (+ column 1)
                                                 data-format*)
-                                     ;; (data-format-datatype-set!
-                                     ;;  data-format*
-                                     ;;  (foreign-value "CS_CHAR_TYPE" int))
-                                     #;(data-format-format-set!
-                                      data-format*
-                                      (foreign-value "CS_FMT_NULLTERM" int))
-                                     (data-format-format-set!
-                                      data-format*
-                                      (foreign-value "CS_FMT_PADNULL" int))
-                                     #;(data-format-max-length-set!
-                                      data-format*
-                                      1024)
-                                     #;(data-format-max-length-set!
-                                      data-format*
-                                      (* (data-format-max-length data-format*) 10))
-                                     #;(data-format-max-length-set!
-                                      data-format*
-                                      65536)
+                                     (select (data-format-datatype data-format*)
+                                       (((foreign-value "CS_CHAR_TYPE" CS_INT)
+                                         (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
+                                         (foreign-value "CS_TEXT_TYPE" CS_INT)
+                                         (foreign-value "CS_VARCHAR_TYPE" CS_INT)
+                                         (foreign-value "CS_BINARY_TYPE" CS_INT)
+                                         (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
+                                         (foreign-value "CS_VARBINARY_TYPE" CS_INT))
+                                        (data-format-format-set!
+                                         data-format*
+                                         (foreign-value "CS_FMT_PADNULL" CS_INT))))
                                      (match-let
                                          (((make-type* type-size . translate-type*)
                                            (type->make-type*/type-size/translate-type*/default
                                             (data-format-datatype
                                              data-format*))))
-                                       #;(debug (data-format-max-length data-format*)
-                                              type-size
-                                              make-type*
-                                              translate-type*
-                                              (data-format-datatype data-format*))
                                        (let* ((length
                                                (inexact->exact
                                                 (ceiling
@@ -699,7 +688,6 @@
                                                   value*
                                                   (location valuelen)
                                                   (location indicator)))
-                                         #;(debug (cons* value* translate-type* length))
                                          (cons* value* translate-type* length))))))))
                            (let-location ((rows-read int))
                              (while (let ((retcode
