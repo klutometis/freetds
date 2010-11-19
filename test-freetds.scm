@@ -33,6 +33,9 @@
 (define (success? retcode)
   (= retcode (foreign-value "CS_SUCCEED" CS_INT)))
 
+(define (row-failure? retcode)
+  (= retcode (foreign-value "CS_ROW_FAIL" CS_INT)))
+
 ;;; Should rather be called: `error-on-non-success'.
 (define (error-on-failure thunk location message . arguments)
   (let ((retcode (thunk)))
@@ -291,7 +294,8 @@
      (import matchable)
      (match-let (((_ type) expression))
        (let ((malloc
-              (sprintf "C_return((~a *) calloc(length, sizeof(~a)));"
+              (sprintf #;"C_return((~a *) malloc(length * sizeof(~a)));"
+                       "C_return(malloc(length * (sizeof(~a))));"
                       type
                       type)))
          (let* ((type* (string->symbol (conc type "*")))
@@ -386,6 +390,11 @@
   (CS_SMALLINT len varbinary-length)
   (CS_CHAR (array 256) varbinary-array))
 
+(define-foreign-record-type
+  (CS_VARCHAR CS_VARCHAR)
+  (CS_SMALLINT len varchar-length)
+  (CS_CHAR (str 256) varchar-string))
+
 (define-make-type* CS_DATAFMT)
 (define-make-type* CS_DATEREC)
 
@@ -460,7 +469,6 @@
      max-length))))
 
 (define (CS_DATETIME*->srfi-19-date datetime* type)
-  (debug (null-pointer? datetime*))
   (let ((daterec* (make-CS_DATEREC*)))
     (error-on-failure
      (lambda ()
@@ -485,7 +493,7 @@
                (daterec-year daterec*)
                (daterec-timezone daterec*))))
 
-(define-syntax INT*->number
+(define-syntax CS_INT*->number
   (er-macro-transformer
    (lambda (expression rename compare)
      (import matchable)
@@ -498,8 +506,7 @@
             "C_return((int) *i);")
            ,int*))))))
 
-;;; need something for size, too?
-(define (BINARY*->vector binary* length)
+(define (CS_BINARY*->vector binary* length)
   (let ((vector (make-u8vector length 0)))
     ((foreign-safe-lambda*
       void
@@ -509,31 +516,31 @@
       "memcpy(to, from, length * sizeof(CS_BINARY));")
      binary*
      vector
-     length)
-    #;(debug (pointer-u8-ref binary*)
-           (pointer-u8-ref (pointer+ binary* 1))
-           (pointer-u8-ref (pointer+ binary* 2)))
-    #;(move-memory! binary*
-    vector
-    (* length CS_BINARY-size))
-    (debug length CS_BINARY-size)
+     length) 
     vector))
 
 (define (translate-CS_BINARY* binary* length)
-  (BINARY*->vector binary* length))
+  (CS_BINARY*->vector binary* length))
 (define translate-CS_LONGBINARY* noop)
 (define (translate-CS_VARBINARY* varbinary* length)
-  (debug (varbinary-length varbinary*))
-  (BINARY*->vector varbinary* length))
+  ;; can't seems to retrieve a pointer to the beginning of the array
+  ;; with object->pointer; resorting, therefore, to
+  ;; foreign-safe-lambda*.
+  (CS_BINARY*->vector ((foreign-safe-lambda*
+                        (c-pointer "CS_CHAR")
+                        (((c-pointer "CS_VARBINARY") varbinary))
+                        "C_return(varbinary->array);")
+                       varbinary*)
+                      (varbinary-length varbinary*)))
 ;;; boolean transformation?
 (define (translate-CS_BIT* bit* length)
-  (not (zero? (INT*->number bit* "CS_BIT"))))
+  (not (zero? (CS_INT*->number bit* "CS_BIT"))))
 (define (translate-CS_CHAR* char* length)
   (CS_CHAR*->string char* length))
 (define translate-CS_LONGCHAR* noop)
 (define (translate-CS_VARCHAR* varchar* length)
-  (debug 'varchar length)
-  (CS_CHAR*->string varchar* length))
+  (CS_CHAR*->string (varchar-string varchar*)
+                    (varchar-length varchar*)))
 (define (translate-CS_DATETIME* datetime* length)
   (CS_DATETIME*->srfi-19-date
    datetime*
@@ -543,13 +550,13 @@
    datetime4*
    (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
 (define (translate-CS_TINYINT* tinyint* length)
-  (INT*->number tinyint* "CS_TINYINT"))
+  (CS_INT*->number tinyint* "CS_TINYINT"))
 (define (translate-CS_SMALLINT* smallint* length)
-  (INT*->number smallint* "CS_SMALLINT"))
+  (CS_INT*->number smallint* "CS_SMALLINT"))
 (define (translate-CS_INT* int* length)
-  (INT*->number int* "CS_INT"))
+  (CS_INT*->number int* "CS_INT"))
 (define (translate-CS_BIGINT* bigint* length)
-  (INT*->number bigint* "CS_BIGINT"))
+  (CS_INT*->number bigint* "CS_BIGINT"))
 (define translate-CS_DECIMAL* noop)
 (define translate-CS_NUMERIC* noop)
 (define translate-CS_FLOAT* noop)
@@ -618,7 +625,8 @@
       (let-location ((command* (c-pointer "CS_COMMAND")))
         (allocate-command! connection* (location command*))
         (let* ((query "SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U';")
-               (query "SELECT * FROM testDatabase.dbo.test;"))
+               (query "SELECT * FROM testDatabase.dbo.test;")
+               #;(query "SELECT binary, varbinary FROM testDatabase.dbo.test;"))
           (command! command*
                     (foreign-value "CS_LANG_CMD" CS_INT)
                     (location query)
@@ -651,12 +659,21 @@
                                      ;; (data-format-datatype-set!
                                      ;;  data-format*
                                      ;;  (foreign-value "CS_CHAR_TYPE" int))
-                                     (data-format-format-set!
+                                     #;(data-format-format-set!
                                       data-format*
                                       (foreign-value "CS_FMT_NULLTERM" int))
-                                     ;; (data-format-max-length-set!
-                                     ;;  data-format*
-                                     ;;  1024)
+                                     (data-format-format-set!
+                                      data-format*
+                                      (foreign-value "CS_FMT_PADNULL" int))
+                                     #;(data-format-max-length-set!
+                                      data-format*
+                                      1024)
+                                     #;(data-format-max-length-set!
+                                      data-format*
+                                      (* (data-format-max-length data-format*) 10))
+                                     #;(data-format-max-length-set!
+                                      data-format*
+                                      65536)
                                      (match-let
                                          (((make-type* type-size . translate-type*)
                                            (type->make-type*/type-size/translate-type*/default
@@ -682,18 +699,18 @@
                                                   value*
                                                   (location valuelen)
                                                   (location indicator)))
-                                         (debug (cons* value* translate-type* length))
+                                         #;(debug (cons* value* translate-type* length))
                                          (cons* value* translate-type* length))))))))
                            (let-location ((rows-read int))
-                             (while (success?
-                                     (let ((retcode
-                                            (fetch! command*
-                                                    (foreign-value "CS_UNUSED" CS_INT)
-                                                    (foreign-value "CS_UNUSED" CS_INT)
-                                                    (foreign-value "CS_UNUSED" CS_INT)
-                                                    (location rows-read))))
-                                       (debug retcode)
-                                       retcode))
+                             (while (let ((retcode
+                                           (fetch! command*
+                                                   (foreign-value "CS_UNUSED" CS_INT)
+                                                   (foreign-value "CS_UNUSED" CS_INT)
+                                                   (foreign-value "CS_UNUSED" CS_INT)
+                                                   (location rows-read))))
+                                      (debug retcode)
+                                      (or (success? retcode)
+                                          (row-failure? retcode)))
                                     (debug (map (lambda
                                                     (value/translate-type*/length)
                                                   (match-let

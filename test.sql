@@ -27,8 +27,8 @@ CREATE TABLE test (
        ntext ntext
        );
 INSERT INTO test (binary, varbinary, bit, varchar) VALUES (
-       CONVERT(VARBINARY(256), 24987234987),
-       24987234987,
+       CONVERT(BINARY(256), '8'),
+       82,
        1,
        CONVERT(VARCHAR(256), 'harro')
        );
