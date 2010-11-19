@@ -1,4 +1,10 @@
 # -*- mode: org; -*-
+* DONE bigint
+  CLOSED: [2010-11-19 Fri 12:32]
+  - CLOSING NOTE [2010-11-19 Fri 12:32] \\
+    integer64
+  =int= is not sufficient to contain it; it's 64-bits. do we have an
+  int64 or a long long?
 * TODO numeric, decimal
   how to convert from the array to a number?
 

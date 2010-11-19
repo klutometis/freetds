@@ -57,4 +57,3 @@ INSERT INTO test VALUES (
        N'oeöutnh',
        N'日本語'
        );
-go

@@ -496,11 +496,11 @@
   (er-macro-transformer
    (lambda (expression rename compare)
      (import matchable)
-     (match-let (((_ int* type) expression))
+     (match-let (((_ int* type return-type) expression))
        (let ((%foreign-safe-lambda*
               (rename 'foreign-safe-lambda*)))
          `((,%foreign-safe-lambda*
-            int
+            ,return-type
             (((c-pointer ,type) i))
             "C_return((int) *i);")
            ,int*))))))
@@ -537,7 +537,7 @@
                       256))
 ;;; boolean transformation?
 (define (translate-CS_BIT* bit* length)
-  (not (zero? (CS_INT*->number bit* "CS_BIT"))))
+  (not (zero? (CS_INT*->number bit* "CS_BIT" short))))
 (define (translate-CS_CHAR* char* length)
   (CS_CHAR*->string char* length))
 (define translate-CS_LONGCHAR* noop)
@@ -553,18 +553,57 @@
    datetime4*
    (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
 (define (translate-CS_TINYINT* tinyint* length)
-  (CS_INT*->number tinyint* "CS_TINYINT"))
+  (CS_INT*->number tinyint* "CS_TINYINT" short))
 (define (translate-CS_SMALLINT* smallint* length)
-  (CS_INT*->number smallint* "CS_SMALLINT"))
+  (CS_INT*->number smallint* "CS_SMALLINT" short))
 (define (translate-CS_INT* int* length)
-  (CS_INT*->number int* "CS_INT"))
+  (CS_INT*->number int* "CS_INT" integer32))
 (define (translate-CS_BIGINT* bigint* length)
-  (CS_INT*->number bigint* "CS_BIGINT"))
+  (CS_INT*->number bigint* "CS_BIGINT" integer64))
 (define translate-CS_DECIMAL* noop)
 (define translate-CS_NUMERIC* noop)
-(define translate-CS_FLOAT* noop)
-(define translate-CS_REAL* noop)
-(define translate-CS_MONEY* noop)
+(define (translate-CS_FLOAT* float* length)
+  ((foreign-safe-lambda*
+    double
+    (((c-pointer "CS_FLOAT") n))
+    "C_return((double) *n);")
+   float*))
+(define (translate-CS_REAL* real* length)
+  ((foreign-safe-lambda*
+    float
+    (((c-pointer "CS_REAL") n))
+    "C_return((float) *n);")
+   real*))
+(define (translate-CS_MONEY* money* length)
+  (error-on-failure
+   (lambda ()
+     (let ((source-format* (make-CS_DATAFMT*))
+           (destination-format* (make-CS_DATAFMT*))
+           (destination-data* (make-CS_BIGINT*))
+           (result-length* (make-CS_INT*)))
+       (data-format-datatype-set!
+        source-format*
+        (foreign-value "CS_MONEY_TYPE" CS_INT))
+       (data-format-datatype-set!
+        destination-format*
+        (foreign-value "CS_BIGINT_TYPE" CS_INT))
+       ((foreign-safe-lambda CS_RETCODE
+                             "cs_convert"
+                             (c-pointer "CS_CONTEXT")
+                             (c-pointer "CS_DATAFMT")
+                             (c-pointer "CS_VOID")
+                             (c-pointer "CS_DATAFMT")
+                             (c-pointer "CS_VOID")
+                             (c-pointer "CS_INT"))
+        (null-pointer)
+        source-format*
+        money*
+        destination-format*
+        destination-data*
+        result-length*)
+       (CS_INT*->number destination-data* "CS_BIGINT" integer64)))
+   'cs_convert
+   "failed to convert money to int64"))
 (define translate-CS_MONEY4* noop)
 (define (translate-CS_TEXT* text* length)
   (CS_CHAR*->string text* length))
@@ -630,7 +669,7 @@
         (allocate-command! connection* (location command*))
         (let* ((query "SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U';")
                (query "SELECT * FROM testDatabase.dbo.test;")
-               (query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;"))
+               #;(query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;"))
           (command! command*
                     (foreign-value "CS_LANG_CMD" CS_INT)
                     (location query)
@@ -660,9 +699,6 @@
                                      (describe! command*
                                                 (+ column 1)
                                                 data-format*)
-                                     (debug (data-format-scale data-format*)
-                                            (data-format-precision data-format*)
-                                            (data-format-status data-format*))
                                      (select (data-format-datatype data-format*)
                                        (((foreign-value "CS_CHAR_TYPE" CS_INT)
                                          (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
