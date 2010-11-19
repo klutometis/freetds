@@ -1,7 +1,7 @@
 USE testDatabase;
 IF EXISTS(SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'test') DROP TABLE test;
 CREATE TABLE test (
-       binary binary(16),
+       binary binary(2),
        varbinary varbinary(16),
        -- boolean boolean,
        bit bit,
@@ -27,8 +27,15 @@ CREATE TABLE test (
        ntext ntext
        );
 INSERT INTO test VALUES (
-       65536,
-       65536,
+       -- 16,
+       -- 16777216,
+       -- CONVERT(VARBINARY(256), '0x100000', 1),
+       -- 65536,
+       -- power(2, 8) - 1,
+       -- power(2, 8) - 1,
+       -- power(2, 8) - 1,
+       1,
+       1,
        1,
        'harro',
        'harro',
@@ -50,3 +57,4 @@ INSERT INTO test VALUES (
        N'oeöutnh',
        N'日本語'
        );
+go

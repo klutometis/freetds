@@ -522,16 +522,19 @@
   (CS_BINARY*->vector binary* length))
 (define translate-CS_LONGBINARY* noop)
 (define (translate-CS_VARBINARY* varbinary* length)
+  (debug length (varbinary-length varbinary*))
   ;; can't seems to retrieve a pointer to the beginning of the array
   ;; with object->pointer; resorting, therefore, to
   ;; foreign-safe-lambda*.
-  (CS_BINARY*->vector ((foreign-safe-lambda*
+  #;(CS_BINARY*->vector ((foreign-safe-lambda*
                         (c-pointer "CS_CHAR")
                         (((c-pointer "CS_VARBINARY") varbinary))
                         "C_return(varbinary->array);")
                        varbinary*)
                       (varbinary-length varbinary*)
-                      #;256))
+                      #;256)
+  (CS_BINARY*->vector varbinary*
+                      256))
 ;;; boolean transformation?
 (define (translate-CS_BIT* bit* length)
   (not (zero? (CS_INT*->number bit* "CS_BIT"))))
@@ -627,7 +630,7 @@
         (allocate-command! connection* (location command*))
         (let* ((query "SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U';")
                (query "SELECT * FROM testDatabase.dbo.test;")
-               #;(query "SELECT binary, varbinary FROM testDatabase.dbo.test;"))
+               (query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;"))
           (command! command*
                     (foreign-value "CS_LANG_CMD" CS_INT)
                     (location query)
@@ -657,6 +660,9 @@
                                      (describe! command*
                                                 (+ column 1)
                                                 data-format*)
+                                     (debug (data-format-scale data-format*)
+                                            (data-format-precision data-format*)
+                                            (data-format-status data-format*))
                                      (select (data-format-datatype data-format*)
                                        (((foreign-value "CS_CHAR_TYPE" CS_INT)
                                          (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 

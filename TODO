@@ -83,6 +83,45 @@
   example, ct_bind ignores the value of datafmt−>maxlength when
   binding to a CS_VARBINARY variable.
   #+END_QUOTE
+
+  yet another [[http://msdn.microsoft.com/en-us/library/ms188362.aspx][blurb]]:
+
+  #+BEGIN_QUOTE
+  Binary data types of either fixed length or variable length.  binary
+  [ ( n ) ]
+
+  Fixed-length binary data with a length of n bytes, where n is a
+  value from 1 through 8,000. The storage size is n bytes.  varbinary
+  [ ( n | max) ]
+
+  Variable-length binary data. n can be a value from 1 through
+  8,000. max indicates that the maximum storage size is 2^31-1
+  bytes. The storage size is the actual length of the data entered + 2
+  bytes. The data that is entered can be 0 bytes in length. The ANSI
+  SQL synonym for varbinary is binary varying.
+  #+END_QUOTE
+
+  notice the two extra bytes; weird.
+
+  indeed: the length of the varbinary is n / 256, where n is
+  varbinary(n). using varbinary(n), i'm able to encode up to 2^8 - 1 =
+  255, which gets placed in the first spot. with varbinary(2), 2^8
+  becomes 1 0; 2^0 becomes 0 1. i don't appear to have any way of
+  knowing, however, that the column is two bytes long. length is 1, in
+  the latter case; but varbinary length is 256. in the former, length
+  is 1, varbinary length is 1. 2^8 - 1 is 0 255, as
+  expected. varbinary-length, however, is -256. is there anything in
+  CS_DATAFMT that could be of help: scale or precision, maybe? nope,
+  they're both 0.
+
+  maybe a conversion is in store? i have the maximum size, which is
+  (* max-length 256); could convert it to normal binary and truncate
+  the left-most 0s.
+
+  wow: DATALENGTH(varbinary) does the trick; but then i have to submit
+  an extra query every time? is it the case that you have no idea how
+  many 0s are significant? i think so. or is it the case that 256
+  corresponds to only 4 bytes?
 * TODO text, image
   might need special processing with =ct_get_data=; indeed: i assume
   that if the length of the text or image is greater than maxlength,
