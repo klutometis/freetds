@@ -8,7 +8,8 @@
      srfi-13
      srfi-19
      miscmacros
-     matchable)
+     matchable
+     numbers)
 
 (include "test-freetds-secret.scm")
 
@@ -604,8 +605,9 @@
     "C_return((float) *n);")
    real*))
 (define (translate-CS_MONEY* context* money* length)
-  (+ (* (money-high money*) (expt 2 32))
-     (money-low money*)))
+  (inexact->exact
+   (+ (* (money-high money*) (expt 2 32))
+      (money-low money*))))
 (define (translate-CS_MONEY4* context* small-money* length)
   (small-money-value small-money*))
 (define (translate-CS_TEXT* context* text* length)
