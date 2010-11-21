@@ -45,15 +45,16 @@ INSERT INTO test VALUES (
        12,
        12,
        12,
-       12.0,
-       12.0,
-       12.0,
-       12.0,
-       $12.00,
-       $12.00,
+       12.1,
+       12.1,
+       12.1,
+       12.1,
+       CONVERT(MONEY, '$12.50'),
+       CONVERT(MONEY, '$12.50'),
        'oeutnh',
        'oeutnh',
        'oeutnh',
        N'oeöutnh',
        N'日本語'
        );
+go

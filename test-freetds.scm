@@ -518,94 +518,97 @@
      length) 
     vector))
 
-(define (translate-CS_BINARY* binary* length)
+(define (translate-CS_BINARY* context* binary* length)
   (CS_BINARY*->vector binary* length))
 (define translate-CS_LONGBINARY* noop)
-(define (translate-CS_VARBINARY* varbinary* length)
+(define (translate-CS_VARBINARY* context* varbinary* length)
   (debug length (varbinary-length varbinary*))
   ;; can't seems to retrieve a pointer to the beginning of the array
   ;; with object->pointer; resorting, therefore, to
   ;; foreign-safe-lambda*.
-  #;(CS_BINARY*->vector ((foreign-safe-lambda*
-                        (c-pointer "CS_CHAR")
-                        (((c-pointer "CS_VARBINARY") varbinary))
-                        "C_return(varbinary->array);")
-                       varbinary*)
-                      (varbinary-length varbinary*)
-                      #;256)
+  ;; (CS_BINARY*->vector ((foreign-safe-lambda*
+  ;;                       (c-pointer "CS_CHAR")
+  ;;                       (((c-pointer "CS_VARBINARY") varbinary))
+  ;;                       "C_return(varbinary->array);")
+  ;;                      varbinary*)
+  ;;                     (varbinary-length varbinary*)
+  ;;                     #;256)
   (CS_BINARY*->vector varbinary*
                       256))
 ;;; boolean transformation?
-(define (translate-CS_BIT* bit* length)
+(define (translate-CS_BIT* context* bit* length)
   (not (zero? (CS_INT*->number bit* "CS_BIT" short))))
-(define (translate-CS_CHAR* char* length)
+(define (translate-CS_CHAR* context* char* length)
   (CS_CHAR*->string char* length))
 (define translate-CS_LONGCHAR* noop)
-(define (translate-CS_VARCHAR* varchar* length)
+(define (translate-CS_VARCHAR* context* varchar* length)
   (CS_CHAR*->string (varchar-string varchar*)
                     (varchar-length varchar*)))
-(define (translate-CS_DATETIME* datetime* length)
+(define (translate-CS_DATETIME* context* datetime* length)
   (CS_DATETIME*->srfi-19-date
    datetime*
    (foreign-value "CS_DATETIME_TYPE" CS_INT)))
-(define (translate-CS_DATETIME4* datetime4* length)
+(define (translate-CS_DATETIME4* context* datetime4* length)
   (CS_DATETIME*->srfi-19-date
    datetime4*
    (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
-(define (translate-CS_TINYINT* tinyint* length)
+(define (translate-CS_TINYINT* context* tinyint* length)
   (CS_INT*->number tinyint* "CS_TINYINT" short))
-(define (translate-CS_SMALLINT* smallint* length)
+(define (translate-CS_SMALLINT* context* smallint* length)
   (CS_INT*->number smallint* "CS_SMALLINT" short))
-(define (translate-CS_INT* int* length)
+(define (translate-CS_INT* context* int* length)
   (CS_INT*->number int* "CS_INT" integer32))
-(define (translate-CS_BIGINT* bigint* length)
+(define (translate-CS_BIGINT* context* bigint* length)
   (CS_INT*->number bigint* "CS_BIGINT" integer64))
 (define translate-CS_DECIMAL* noop)
 (define translate-CS_NUMERIC* noop)
-(define (translate-CS_FLOAT* float* length)
+(define (translate-CS_FLOAT* context* float* length)
   ((foreign-safe-lambda*
     double
     (((c-pointer "CS_FLOAT") n))
     "C_return((double) *n);")
    float*))
-(define (translate-CS_REAL* real* length)
+(define (translate-CS_REAL* context* real* length)
   ((foreign-safe-lambda*
     float
     (((c-pointer "CS_REAL") n))
     "C_return((float) *n);")
    real*))
-(define (translate-CS_MONEY* money* length)
-  (error-on-failure
-   (lambda ()
-     (let ((source-format* (make-CS_DATAFMT*))
-           (destination-format* (make-CS_DATAFMT*))
-           (destination-data* (make-CS_BIGINT*))
-           (result-length* (make-CS_INT*)))
+(define (translate-CS_MONEY* context* money* length)
+  (let ((source-format* (make-CS_DATAFMT*))
+        (destination-format* (make-CS_DATAFMT*))
+        (destination-data* (make-CS_BIGINT*))
+        (result-length* (make-CS_INT*)))
+    (error-on-failure
+     (lambda ()
        (data-format-datatype-set!
         source-format*
         (foreign-value "CS_MONEY_TYPE" CS_INT))
        (data-format-datatype-set!
         destination-format*
         (foreign-value "CS_BIGINT_TYPE" CS_INT))
-       ((foreign-safe-lambda CS_RETCODE
-                             "cs_convert"
-                             (c-pointer "CS_CONTEXT")
-                             (c-pointer "CS_DATAFMT")
-                             (c-pointer "CS_VOID")
-                             (c-pointer "CS_DATAFMT")
-                             (c-pointer "CS_VOID")
-                             (c-pointer "CS_INT"))
-        (null-pointer)
-        source-format*
-        money*
-        destination-format*
-        destination-data*
-        result-length*)
-       (CS_INT*->number destination-data* "CS_BIGINT" integer64)))
-   'cs_convert
-   "failed to convert money to int64"))
+       (let ((retcode
+              ((foreign-safe-lambda CS_RETCODE
+                                    "cs_convert"
+                                    (c-pointer "CS_CONTEXT")
+                                    (c-pointer "CS_DATAFMT")
+                                    (c-pointer "CS_VOID")
+                                    (c-pointer "CS_DATAFMT")
+                                    (c-pointer "CS_VOID")
+                                    (c-pointer "CS_INT"))
+               context*
+               source-format*
+               money*
+               destination-format*
+               destination-data*
+               result-length*)))
+         (debug 'money retcode)
+         retcode))
+     'cs_convert
+     "failed to convert money to int64")
+    (CS_INT*->number destination-data* "CS_BIGINT" integer64)))
 (define translate-CS_MONEY4* noop)
-(define (translate-CS_TEXT* text* length)
+(define (translate-CS_TEXT* context* text* length)
   (CS_CHAR*->string text* length))
 (define translate-CS_IMAGE* noop)
 
@@ -669,7 +672,9 @@
         (allocate-command! connection* (location command*))
         (let* ((query "SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U';")
                (query "SELECT * FROM testDatabase.dbo.test;")
-               #;(query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;"))
+               ;; (query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;")
+               ;; (query "SELECT money FROM testDatabase.dbo.test;")
+               )
           (command! command*
                     (foreign-value "CS_LANG_CMD" CS_INT)
                     (location query)
@@ -748,7 +753,9 @@
                                                          translate-type* .
                                                          length)
                                                         value/translate-type*/length))
-                                                    (translate-type* value length)))
+                                                    (translate-type* context*
+                                                                     value
+                                                                     length)))
                                                 values/translate-types*))))))))
                     (more-results (results! command* (location result-type))))
                   (begin
