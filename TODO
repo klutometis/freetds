@@ -85,7 +85,11 @@
 
   =cs_calc= or =cs_convert=, maybe? see the quote under [[varbinary]];
   it's a base-256 little-endian with sign in the first position.
-* TODO datatype utilities
+
+  =cs_convert= was fine with money, for instance; we can do it to
+  float. but do we need to respect precision, somehow?
+* DONE datatype utilities
+  CLOSED: [2010-11-21 Sun 04:12]
   manual, p. 2-194:
 
   #+BEGIN_QUOTE

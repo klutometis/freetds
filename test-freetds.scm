@@ -404,6 +404,13 @@
   (CS_MONEY4 CS_MONEY4)
   (CS_INT mny4 small-money-value))
 
+(define-foreign-record-type
+  (CS_NUMERIC CS_NUMERIC)
+  (CS_CHAR precision numeric-precision)
+  (CS_CHAR scale numeric-scale)
+  ;; 33 = CS_MAX_NUMLEN
+  (CS_CHAR (array 33) numeric-array))
+
 (define-make-type* CS_DATAFMT)
 (define-make-type* CS_DATEREC)
 
@@ -530,7 +537,7 @@
 
 (define (translate-CS_BINARY* context* binary* length)
   (CS_BINARY*->vector binary* length))
-(define translate-CS_LONGBINARY* noop)
+(define translate-CS_LONGBINARY* translate-CS_BINARY*)
 (define (translate-CS_VARBINARY* context* varbinary* length)
   (debug length (varbinary-length varbinary*))
   ;; can't seems to retrieve a pointer to the beginning of the array
@@ -550,7 +557,8 @@
   (not (zero? (CS_INT*->number bit* "CS_BIT" short))))
 (define (translate-CS_CHAR* context* char* length)
   (CS_CHAR*->string char* length))
-(define translate-CS_LONGCHAR* noop)
+(define translate-CS_LONGCHAR*
+  translate-CS_CHAR*)
 (define (translate-CS_VARCHAR* context* varchar* length)
   (CS_CHAR*->string (varchar-string varchar*)
                     (varchar-length varchar*)))
@@ -571,7 +579,18 @@
 (define (translate-CS_BIGINT* context* bigint* length)
   (CS_INT*->number bigint* "CS_BIGINT" integer64))
 (define translate-CS_DECIMAL* noop)
-(define translate-CS_NUMERIC* noop)
+(define (translate-CS_NUMERIC* context* numeric* length)
+  (debug length
+         (char->integer (numeric-precision numeric*))
+         (char->integer (numeric-scale numeric*)))
+  ((foreign-safe-lambda*
+    void
+    (((c-pointer "CS_NUMERIC") numeric))
+    "int i;"
+    "for (i = 1; i < CS_MAX_NUMLEN; i++) printf(\"%d\", numeric->array[i]);"
+    "puts(\"\");")
+   numeric*)
+  2)
 (define (translate-CS_FLOAT* context* float* length)
   ((foreign-safe-lambda*
     double
