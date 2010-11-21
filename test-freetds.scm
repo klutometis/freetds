@@ -16,6 +16,7 @@
 
 (define-foreign-type CS_RETCODE integer32)
 (define-foreign-type CS_INT integer32)
+(define-foreign-type CS_UINT unsigned-integer32)
 (define-foreign-type CS_SMALLINT short)
 (define-foreign-type CS_CHAR char)
 
@@ -394,6 +395,15 @@
   (CS_SMALLINT len varchar-length)
   (CS_CHAR (str 256) varchar-string))
 
+(define-foreign-record-type
+  (CS_MONEY CS_MONEY)
+  (CS_INT mnyhigh money-high)
+  (CS_UINT mnylow money-low))
+
+(define-foreign-record-type
+  (CS_MONEY4 CS_MONEY4)
+  (CS_INT mny4 small-money-value))
+
 (define-make-type* CS_DATAFMT)
 (define-make-type* CS_DATEREC)
 
@@ -575,39 +585,10 @@
     "C_return((float) *n);")
    real*))
 (define (translate-CS_MONEY* context* money* length)
-  (let ((source-format* (make-CS_DATAFMT*))
-        (destination-format* (make-CS_DATAFMT*))
-        (destination-data* (make-CS_BIGINT*))
-        (result-length* (make-CS_INT*)))
-    (error-on-failure
-     (lambda ()
-       (data-format-datatype-set!
-        source-format*
-        (foreign-value "CS_MONEY_TYPE" CS_INT))
-       (data-format-datatype-set!
-        destination-format*
-        (foreign-value "CS_BIGINT_TYPE" CS_INT))
-       (let ((retcode
-              ((foreign-safe-lambda CS_RETCODE
-                                    "cs_convert"
-                                    (c-pointer "CS_CONTEXT")
-                                    (c-pointer "CS_DATAFMT")
-                                    (c-pointer "CS_VOID")
-                                    (c-pointer "CS_DATAFMT")
-                                    (c-pointer "CS_VOID")
-                                    (c-pointer "CS_INT"))
-               context*
-               source-format*
-               money*
-               destination-format*
-               destination-data*
-               result-length*)))
-         (debug 'money retcode)
-         retcode))
-     'cs_convert
-     "failed to convert money to int64")
-    (CS_INT*->number destination-data* "CS_BIGINT" integer64)))
-(define translate-CS_MONEY4* noop)
+  (+ (* (money-high money*) (expt 2 32))
+     (money-low money*)))
+(define (translate-CS_MONEY4* context* small-money* length)
+  (small-money-value small-money*))
 (define (translate-CS_TEXT* context* text* length)
   (CS_CHAR*->string text* length))
 (define translate-CS_IMAGE* noop)

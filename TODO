@@ -1,4 +1,70 @@
 # -*- mode: org; -*-
+* DONE money
+  CLOSED: [2010-11-21 Sun 03:42]
+  - CLOSING NOTE [2010-11-21 Sun 03:42] \\
+    we're going to go int all the way.
+  converting to int throws away the fraction; so does decimal,
+  [[http://msdn.microsoft.com/en-us/library/ms191530.aspx][apparently]]:
+
+  #+BEGIN_QUOTE
+  When you convert to money from integer data types, units are assumed
+  to be in monetary units. For example, the integer value of 4 is
+  converted to the money equivalent of 4 monetary units.
+
+  The following example converts smallmoney and money values to varchar
+  and decimal data types, respectively.
+
+  #+BEGIN_EXAMPLE
+  USE AdventureWorks2008R2;
+  GO
+  DECLARE @mymoney_sm smallmoney;
+  SET  @mymoney_sm = 3148.29;
+  SELECT  CAST(@mymoney_sm AS varchar) AS 'SM_MONEY varchar';
+  GO
+  DECLARE @mymoney    money;
+  SET  @mymoney    = 3148.29;
+  SELECT  CAST(@mymoney AS decimal)    AS 'MONEY DECIMAL';
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  GO
+  Copy 
+  USE AdventureWorks2008R2;
+  GO
+  DECLARE @mymoney_sm smallmoney;
+  SET  @mymoney_sm = 3148.29;
+  SELECT  CAST(@mymoney_sm AS varchar) AS 'SM_MONEY varchar';
+  GO
+  DECLARE @mymoney    money;
+  SET  @mymoney    = 3148.29;
+  SELECT  CAST(@mymoney AS decimal)    AS 'MONEY DECIMAL';
+
+  GO
+  #+END_EXAMPLE
+
+  Here is the result set.
+
+  #+BEGIN_EXAMPLE
+  SM_MONEY VARCHAR 
+
+  ------------------------------ 
+
+  3148.29 
+
+
+  (1 row(s) affected) 
+
+
+  MONEY DECIMAL 
+
+  ---------------------- 
+
+  3148 
+
+
+  (1 row(s) affected)
+  #+END_EXAMPLE
+  #+END_QUOTE
 * DONE bigint
   CLOSED: [2010-11-19 Fri 12:32]
   - CLOSING NOTE [2010-11-19 Fri 12:32] \\
