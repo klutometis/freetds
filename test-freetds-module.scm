@@ -1,8 +1,9 @@
+#!/usr/bin/env chicken-scheme
 ;; (require 'freetds)
 ;; (load "freetds.scm")
 ;; (import "freetds.so")
 ;; (use freetds)
-,l freetds.so
+,l freetds.scm
 ;; (require-library 'freetds)
 (use freetds)
 #;(display (make-CS_INT*))
