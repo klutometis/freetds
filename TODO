@@ -1,4 +1,32 @@
 # -*- mode: org; -*-
+* TODO alist-lib
+* TODO =define-make-type*/type-size/update-type-table!=
+  can probably get away with =define-make-type*/type-size=, but what
+  about explicit tables for =type->make-type*=, =type->type-size=,
+  =type->parse-type=, =type->unparse-type=?
+* TODO =translate-type*= -> ={un,}parse-type*=
+* TODO module
+** TODO {un,}parsing
+   see the [[http://wiki.call-cc.org/eggref/4/postgresql#type-conversion][postgresql stuff]] on {un,}parsers; not only can you set the
+   =default-type-{un,}parsers= parameters, you can pass an
+   {un,}parse-table to =connect=.
+
+   also, postgre has predicates associated with the types; would that
+   allow us to do more sophisticated things, like distinguish between
+   bigints and numerics? no. what about custom types? perhaps. wow, it
+   does allow composite parsers by predicate-composition. it also does
+   a-priori conversion of c-types to blobs, apparently.
+
+   the postgre connection object apparently contains the
+   {un,}parse-tables; allowing modification after connection.
+
+   in =query*=, by the way, there's a lot of =memcpy=, =C_malloc= and
+   =free=; interesting:
+
+   #+BEGIN_SRC scheme
+     ;; This must copy because libpq returns a malloced ptr...
+   #+END_SRC
+* TODO custom types
 * TODO timestamp type
   from [[http://msdn.microsoft.com/en-us/library/aa260631(v=SQL.80).aspx][here]]:
 
@@ -140,6 +168,9 @@
   To change null substitution values, an application can call the
   CS-Library routine =cs_setnull=.
   #+END_QUOTE
+
+  postgre has a =PQgetisnull=, by the way; and the egg returns
+  =(sql-null)=.
 * DONE text, image
   CLOSED: [2010-11-22 Mon 16:25]
   - CLOSING NOTE [2010-11-22 Mon 16:26] \\

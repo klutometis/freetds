@@ -1,2 +1,8 @@
-(compile -lct -o harro test-freetds.scm)
-(compile -t -lct -o harro test-freetds.scm)
+;;; -*- Hen -*-
+(include "setup-helper")
+
+(verify-extension-name "freetds")
+
+(setup-shared-extension-module
+ 'freetds
+ (extension-version 0.1))

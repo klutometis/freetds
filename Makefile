@@ -1,8 +1,8 @@
-.PHONY: test
+.PHONY: test clean
 
 # NB: needs the autocompile egg
 test:
 	CHICKEN_SCHEME_OPTIONS=-lct ./test-freetds.scm
 
-purge:
+clean:
 	chicken-scheme -purge
