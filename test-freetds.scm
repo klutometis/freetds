@@ -9,7 +9,8 @@
      srfi-19
      miscmacros
      matchable
-     numbers)
+     numbers
+     foof-loop)
 
 (include "test-freetds-secret.scm")
 
@@ -485,7 +486,7 @@
          "C_return(vector[i]);") vector i))
      max-length))))
 
-(define (CS_DATETIME*->srfi-19-date datetime* type)
+(define (CS_DATETIME*->srfi-19-date context* datetime* type)
   (let ((daterec* (make-CS_DATEREC*)))
     (error-on-failure
      (lambda ()
@@ -495,7 +496,7 @@
                         CS_INT
                         (c-pointer "CS_VOID")
                         (c-pointer "CS_DATEREC"))
-        (null-pointer)
+        context*
         type
         datetime*
         daterec*))
@@ -565,10 +566,12 @@
                     (varchar-length varchar*)))
 (define (translate-CS_DATETIME* context* datetime* length)
   (CS_DATETIME*->srfi-19-date
+   context*
    datetime*
    (foreign-value "CS_DATETIME_TYPE" CS_INT)))
 (define (translate-CS_DATETIME4* context* datetime4* length)
   (CS_DATETIME*->srfi-19-date
+   context*
    datetime4*
    (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
 (define (translate-CS_TINYINT* context* tinyint* length)
@@ -579,19 +582,32 @@
   (CS_INT*->number int* "CS_INT" integer32))
 (define (translate-CS_BIGINT* context* bigint* length)
   (CS_INT*->number bigint* "CS_BIGINT" integer64))
-(define translate-CS_DECIMAL* noop)
+(define (cardinality integer base)
+  (loop ((for power (up-from 0))
+         (until (> (expt base power) integer))) => power))
 (define (translate-CS_NUMERIC* context* numeric* length)
-  (debug length
-         (char->integer (numeric-precision numeric*))
-         (char->integer (numeric-scale numeric*)))
-  ((foreign-safe-lambda*
-    void
-    (((c-pointer "CS_NUMERIC") numeric))
-    "int i;"
-    "for (i = 1; i < CS_MAX_NUMLEN; i++) printf(\"%d\", numeric->array[i]);"
-    "puts(\"\");")
-   numeric*)
-  2)
+  (let ((maximum-number-length (foreign-value "CS_MAX_NUMLEN" int)))
+    (let ((positive? (zero? (char->integer (numeric-array numeric* 0))))
+          (base-256-digits
+           (cardinality (expt 10 (sub1
+                                  (char->integer
+                                   (numeric-precision numeric*))))
+                        256)))
+      (let add ((augend 0) (index 1))
+        (if (> index base-256-digits)
+            (let* ((scale (char->integer (numeric-scale numeric*)))
+                   (number
+                    (if (zero? scale)
+                        augend
+                        (exact->inexact (/ augend (expt 10 scale))))))
+              (if positive? number (* number -1)))
+            (add (let ((base (char->integer (numeric-array numeric* index))))
+                   (if (zero? base)
+                       augend
+                       (+ augend
+                          (* base (expt 256 (- base-256-digits index))))))
+                 (+ index 1)))))))
+(define translate-CS_DECIMAL* translate-CS_NUMERIC*)
 (define (translate-CS_FLOAT* context* float* length)
   ((foreign-safe-lambda*
     double
@@ -612,7 +628,7 @@
   (small-money-value small-money*))
 (define (translate-CS_TEXT* context* text* length)
   (CS_CHAR*->string text* length))
-(define translate-CS_IMAGE* noop)
+(define translate-CS_IMAGE* translate-CS_TEXT*)
 
 (define-make-type*/type-size/update-type-table! CS_BINARY)
 (define-make-type*/type-size/update-type-table! CS_LONGBINARY)
@@ -673,9 +689,10 @@
       (let-location ((command* (c-pointer "CS_COMMAND")))
         (allocate-command! connection* (location command*))
         (let* ((query "SELECT * FROM SYSOBJECTS WHERE XTYPE = 'U';")
+               (query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;")
+               (query "SELECT money FROM testDatabase.dbo.test;")
+               (query "SELECT bigint, decimal, numeric FROM testDatabase.dbo.test;")
                (query "SELECT * FROM testDatabase.dbo.test;")
-               ;; (query "SELECT binary, varbinary, DATALENGTH(varbinary) FROM testDatabase.dbo.test;")
-               ;; (query "SELECT money FROM testDatabase.dbo.test;")
                )
           (command! command*
                     (foreign-value "CS_LANG_CMD" CS_INT)

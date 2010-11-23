@@ -1,110 +1,14 @@
 # -*- mode: org; -*-
-* DONE money
-  CLOSED: [2010-11-21 Sun 03:42]
-  - CLOSING NOTE [2010-11-21 Sun 03:42] \\
-    we're going to go int all the way.
-  converting to int throws away the fraction; so does decimal,
-  [[http://msdn.microsoft.com/en-us/library/ms191530.aspx][apparently]]:
+* TODO timestamp type
+  from [[http://msdn.microsoft.com/en-us/library/aa260631(v=SQL.80).aspx][here]]:
 
   #+BEGIN_QUOTE
-  When you convert to money from integer data types, units are assumed
-  to be in monetary units. For example, the integer value of 4 is
-  converted to the money equivalent of 4 monetary units.
-
-  The following example converts smallmoney and money values to varchar
-  and decimal data types, respectively.
-
-  #+BEGIN_EXAMPLE
-  USE AdventureWorks2008R2;
-  GO
-  DECLARE @mymoney_sm smallmoney;
-  SET  @mymoney_sm = 3148.29;
-  SELECT  CAST(@mymoney_sm AS varchar) AS 'SM_MONEY varchar';
-  GO
-  DECLARE @mymoney    money;
-  SET  @mymoney    = 3148.29;
-  SELECT  CAST(@mymoney AS decimal)    AS 'MONEY DECIMAL';
-  #+END_EXAMPLE
-
-  #+BEGIN_EXAMPLE
-  GO
-  Copy 
-  USE AdventureWorks2008R2;
-  GO
-  DECLARE @mymoney_sm smallmoney;
-  SET  @mymoney_sm = 3148.29;
-  SELECT  CAST(@mymoney_sm AS varchar) AS 'SM_MONEY varchar';
-  GO
-  DECLARE @mymoney    money;
-  SET  @mymoney    = 3148.29;
-  SELECT  CAST(@mymoney AS decimal)    AS 'MONEY DECIMAL';
-
-  GO
-  #+END_EXAMPLE
-
-  Here is the result set.
-
-  #+BEGIN_EXAMPLE
-  SM_MONEY VARCHAR 
-
-  ------------------------------ 
-
-  3148.29 
-
-
-  (1 row(s) affected) 
-
-
-  MONEY DECIMAL 
-
-  ---------------------- 
-
-  3148 
-
-
-  (1 row(s) affected)
-  #+END_EXAMPLE
+  A nonnullable timestamp column is semantically equivalent to a
+  binary(8) column. A nullable timestamp column is semantically
+  equivalent to a varbinary(8) column.
   #+END_QUOTE
-* DONE bigint
-  CLOSED: [2010-11-19 Fri 12:32]
-  - CLOSING NOTE [2010-11-19 Fri 12:32] \\
-    integer64
-  =int= is not sufficient to contain it; it's 64-bits. do we have an
-  int64 or a long long?
-* TODO numeric, decimal
-  how to convert from the array to a number?
-
-  #+BEGIN_SRC c
-    typedef struct _cs_numeric
-    {
-      unsigned char precision;
-      unsigned char scale;
-      unsigned char array[CS_MAX_NUMLEN];
-    } CS_NUMERIC;
-  #+END_SRC
-
-  =cs_calc= or =cs_convert=, maybe? see the quote under [[varbinary]];
-  it's a base-256 little-endian with sign in the first position.
-
-  =cs_convert= was fine with money, for instance; we can do it to
-  float. but do we need to respect precision, somehow?
-* DONE datatype utilities
-  CLOSED: [2010-11-21 Sun 04:12]
-  manual, p. 2-194:
-
-  #+BEGIN_QUOTE
-  - cs_calc, which performs arithmetic operations on decimal, money,
-    and numeric datatypes
-  - cs_cmp, which compares datetime, decimal, money, and numeric
-    datatypes
-  - cs_convert, which converts a data value from one datatype to
-    another
-  - cs_dt_crack, which converts a machine readable datetime value into
-    a user-accessible format
-  - cs_dt_info, which sets or retrieves language-specific datetime
-    information
-  - cs_strcmp, which compares two strings
-  #+END_QUOTE
+* TODO dynamic queries
+* TODO chunking text, images (=ct_get_data=)
 * TODO varbinary
 # <<varbinary>>
   we don't seem to be able to extract the length reliably out of the
@@ -198,10 +102,6 @@
   an extra query every time? is it the case that you have no idea how
   many 0s are significant? i think so. or is it the case that 256
   corresponds to only 4 bytes?
-* TODO text, image
-  might need special processing with =ct_get_data=; indeed: i assume
-  that if the length of the text or image is greater than maxlength,
-  it issues a CS_ROW_FAIL and forces chunked retrieval.
 * TODO determining whether data is NULL
   should we zero the memory first? maybe it doesn't touch it. never
   mind; see guide, p. 55:
@@ -239,6 +139,141 @@
 
   To change null substitution values, an application can call the
   CS-Library routine =cs_setnull=.
+  #+END_QUOTE
+* DONE text, image
+  CLOSED: [2010-11-22 Mon 16:25]
+  - CLOSING NOTE [2010-11-22 Mon 16:26] \\
+    support for text and images without chunking.
+  might need special processing with =ct_get_data=; indeed: i assume
+  that if the length of the text or image is greater than maxlength,
+  it issues a CS_ROW_FAIL and forces chunked retrieval.
+* DONE money
+  CLOSED: [2010-11-21 Sun 03:42]
+  - CLOSING NOTE [2010-11-21 Sun 03:42] \\
+    we're going to go int all the way.
+  converting to int throws away the fraction; so does decimal,
+  [[http://msdn.microsoft.com/en-us/library/ms191530.aspx][apparently]]:
+
+  #+BEGIN_QUOTE
+  When you convert to money from integer data types, units are assumed
+  to be in monetary units. For example, the integer value of 4 is
+  converted to the money equivalent of 4 monetary units.
+
+  The following example converts smallmoney and money values to varchar
+  and decimal data types, respectively.
+
+  #+BEGIN_EXAMPLE
+  USE AdventureWorks2008R2;
+  GO
+  DECLARE @mymoney_sm smallmoney;
+  SET  @mymoney_sm = 3148.29;
+  SELECT  CAST(@mymoney_sm AS varchar) AS 'SM_MONEY varchar';
+  GO
+  DECLARE @mymoney    money;
+  SET  @mymoney    = 3148.29;
+  SELECT  CAST(@mymoney AS decimal)    AS 'MONEY DECIMAL';
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  GO
+  Copy 
+  USE AdventureWorks2008R2;
+  GO
+  DECLARE @mymoney_sm smallmoney;
+  SET  @mymoney_sm = 3148.29;
+  SELECT  CAST(@mymoney_sm AS varchar) AS 'SM_MONEY varchar';
+  GO
+  DECLARE @mymoney    money;
+  SET  @mymoney    = 3148.29;
+  SELECT  CAST(@mymoney AS decimal)    AS 'MONEY DECIMAL';
+
+  GO
+  #+END_EXAMPLE
+
+  Here is the result set.
+
+  #+BEGIN_EXAMPLE
+  SM_MONEY VARCHAR 
+
+  ------------------------------ 
+
+  3148.29 
+
+
+  (1 row(s) affected) 
+
+
+  MONEY DECIMAL 
+
+  ---------------------- 
+
+  3148 
+
+
+  (1 row(s) affected)
+  #+END_EXAMPLE
+  #+END_QUOTE
+* DONE bigint
+  CLOSED: [2010-11-19 Fri 12:32]
+  - CLOSING NOTE [2010-11-19 Fri 12:32] \\
+    integer64
+  =int= is not sufficient to contain it; it's 64-bits. do we have an
+  int64 or a long long?
+* DONE numeric, decimal
+  CLOSED: [2010-11-22 Mon 16:19]
+  how to convert from the array to a number?
+
+  #+BEGIN_SRC c
+    typedef struct _cs_numeric
+    {
+      unsigned char precision;
+      unsigned char scale;
+      unsigned char array[CS_MAX_NUMLEN];
+    } CS_NUMERIC;
+  #+END_SRC
+
+  =cs_calc= or =cs_convert=, maybe? see the quote under [[varbinary]];
+  it's a base-256 little-endian with sign in the first position.
+
+  =cs_convert= was fine with money, for instance; we can do it to
+  float. but do we need to respect precision, somehow?
+
+  on [[http://infocenter.sybase.com/help/index.jsp?topic=/com.sybase.help.ase_15.0.sqlug/html/sqlug/sqlug245.htm][precision vs. scale]]:
+
+  #+BEGIN_QUOTE
+  - The precision specifies the maximum number of decimal digits that
+    can be stored in the column. It includes all digits to the right
+    and left of the decimal point. You can specify a precision ranging
+    from 1 to 38 digits or use the default precision of 18 digits.
+  - The scale specifies the maximum number of digits that can be
+    stored to the right of the decimal point. The scale must be less
+    than or equal to the precision. You can specify a scale ranging
+    from 0 to 38 digits or use the default scale of 0 digits.
+  #+END_QUOTE
+** DONE bigint vs. numeric
+   CLOSED: [2010-11-22 Mon 16:19]
+   we can distinguish between bigint and numeric in that bigint has a
+   scale of 0; in fact, maybe we can treat all scale-zeros as
+   integers.
+
+   we may not explicitly need to, since (/ <integer> (expt 10 0)) also
+   results in an integer.
+* DONE datatype utilities
+  CLOSED: [2010-11-21 Sun 04:12]
+  manual, p. 2-194:
+
+  #+BEGIN_QUOTE
+  - cs_calc, which performs arithmetic operations on decimal, money,
+    and numeric datatypes
+  - cs_cmp, which compares datetime, decimal, money, and numeric
+    datatypes
+  - cs_convert, which converts a data value from one datatype to
+    another
+  - cs_dt_crack, which converts a machine readable datetime value into
+    a user-accessible format
+  - cs_dt_info, which sets or retrieves language-specific datetime
+    information
+  - cs_strcmp, which compares two strings
   #+END_QUOTE
 * DONE low-level api
   CLOSED: [2010-11-18 Thu 18:18]
