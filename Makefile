@@ -1,4 +1,4 @@
-.PHONY: test clean test-module
+.PHONY: test clean test-module clean-module
 
 # NB: needs the autocompile egg
 test:
