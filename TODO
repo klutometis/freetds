@@ -26,6 +26,15 @@
    #+BEGIN_SRC scheme
      ;; This must copy because libpq returns a malloced ptr...
    #+END_SRC
+
+   I was going to suggest that unparsers may be superfluous, since
+   =ct_dynamic= takes a =CS_CHAR *= buffer; but it appears as though
+   =ct_param= passes the input value to the statement, which indeed
+   takes an =CS_DATAFMT *= and a =CS_VOID *= as the data.
+
+   On the other hand, though, if =CS_DATAFMT *= specifies
+   =CS_CHAR_TYPE=, maybe we can get away with string representations;
+   we still need unparsers, though, for srfi-14 dates, currency, etc.
 * TODO custom types
 * TODO timestamp type
   from [[http://msdn.microsoft.com/en-us/library/aa260631(v=SQL.80).aspx][here]]:
