@@ -1,6 +1,6 @@
 (module
  freetds
- (define-make-type*)
+ *
  (import scheme
          chicken
          foreign
@@ -89,13 +89,15 @@
         (let ((%define-make-type* (rename 'define-make-type*))
               (%define-type-size (rename 'define-type-size))
               (%begin (rename 'begin)))
-          (map (lambda (type)
-                 `(,%begin
-                   (,%define-make-type* ,type)
-                   (,%define-type-size ,type)))
-               types))))))
+          (cons
+           %begin
+           (map (lambda (type)
+                  `(,%begin
+                    (,%define-make-type* ,type)
+                    (,%define-type-size ,type)))
+                types)))))))
 
- #;(define-make-type*/type-size
+ (define-make-type*/type-size
    CS_BINARY
    CS_LONGBINARY
    CS_VARBINARY
