@@ -118,4 +118,7 @@
    CS_MONEY
    CS_MONEY4
    CS_TEXT
-   CS_IMAGE))
+   CS_IMAGE)
+
+ (define-foreign-type CS_INT integer32)
+ (define-foreign-type CS_RETCODE CS_INT))
