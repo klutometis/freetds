@@ -1,4 +1,4 @@
-.PHONY: test clean
+.PHONY: test clean test-module
 
 # NB: needs the autocompile egg
 test:
@@ -6,3 +6,9 @@ test:
 
 clean:
 	chicken-scheme -purge
+
+test-module:
+	chicken-install -n && ./test-freetds-module.scm
+
+clean-module:
+	rm -vf freetds.{c,o,so} freetds.import.*
