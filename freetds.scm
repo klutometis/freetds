@@ -167,6 +167,17 @@
     'ct_init
     "failed to initialize context"))
 
+ (define make-context
+   (case-lambda
+    (()
+     (let ((version (foreign-value "CS_VERSION_100" CS_INT)))
+       (make-context version)))
+    ((version)
+     (let-location ((context* (c-pointer "CS_CONTEXT")))
+       (allocate-context! version (location context*))
+       (initialize-context! context* version)
+       context*))))
+
  (define (allocate-connection! context* connection**)
    (error-on-non-success
     (lambda ()
@@ -244,21 +255,61 @@
     'ct_connect
     "failed to connect to server"))
 
- (define make-context
-   (case-lambda
-    (()
-     (let ((version (foreign-value "CS_VERSION_100" CS_INT)))
-       (make-context version)))
-    ((version)
-     (let-location ((context* (c-pointer "CS_CONTEXT")))
-       (allocate-context! version (location context*))
-       (initialize-context! context* version)
-       context*))))
-
  (define (make-connection context* host username password)
    (let-location ((connection* (c-pointer "CS_CONNECTION")))
      (allocate-connection! context* (location connection*))
      (connection-property-set-username! connection* username)
      (connection-property-set-password! connection* password)
      (connect! connection* (location host) (string-length host))
-     connection*)))
+     connection*))
+
+ (define (allocate-command! connection* command**)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_cmd_alloc"
+                       (c-pointer "CS_CONNECTION")
+                       (c-pointer (c-pointer "CS_COMMAND")))
+       connection*
+       command**))
+    'ct_cmd_alloc
+    "failed to allocate command"))
+
+ (define (command! command* type buffer* buffer-length option)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_command"
+                       (c-pointer "CS_COMMAND")
+                       CS_INT
+                       (const (c-pointer "CS_VOID"))
+                       CS_INT
+                       CS_INT)
+       command*
+       type
+       buffer*
+       buffer-length
+       option))
+    'ct_command
+    (format "failed to issue command ~a" buffer*)))
+
+ (define (send! command*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_send"
+                       (c-pointer "CS_COMMAND"))
+       command*))
+    'ct_send
+    "failed to send command"))
+
+ (define (make-command connection* query . parameters)
+   (let-location ((command* (c-pointer "CS_COMMAND")))
+     (allocate-command! connection* (location command*))
+     (command! command*
+               (foreign-value "CS_LANG_CMD" CS_INT)
+               (location query)
+               (foreign-value "CS_NULLTERM" CS_INT)
+               (foreign-value "CS_UNUSED" CS_INT))
+     (send! command*)
+     command*)))

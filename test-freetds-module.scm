@@ -9,5 +9,7 @@
        (connection (make-connection context
                                     server
                                     username
-                                    password)))
-  (display connection))
+                                    password))
+       (command (make-command connection
+                              "SELECT * from testDatabase.dbo.test")))
+  (display command))
