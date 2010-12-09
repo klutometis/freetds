@@ -1,4 +1,5 @@
 # -*- mode: org; -*-
+* TODO =make-{context, connection, etc.}= -> ={context, connect}=
 * TODO abstract away =context*=?
   no, let's provide it initially; "power users" may yet want to
   allocate multiple connections per context? if desirable, we can
