@@ -3,8 +3,9 @@
  *
  (import scheme
          chicken
-         foreign
-         lolevel)
+         foreign)
+
+ (use lolevel)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -67,8 +68,8 @@
                                   void
                                   (((c-pointer ,(symbol->string type)) type))
                                   "free(type);")
-                              type*)))
-                           type*)))))))))))
+                                 type*)))
+                             type*)))))))))))
 
  (define-syntax define-type-size
    (er-macro-transformer
@@ -121,4 +122,143 @@
    CS_IMAGE)
 
  (define-foreign-type CS_INT integer32)
- (define-foreign-type CS_RETCODE CS_INT))
+ (define-foreign-type CS_RETCODE CS_INT)
+
+ (define (freetds-error location message retcode . arguments)
+   (signal (make-composite-condition
+            (make-property-condition 'exn
+                                     'location location
+                                     'message (format "(retcode ~a) ~a"
+                                                      retcode
+                                                      message)
+                                     'arguments arguments)
+            (make-property-condition 'freetds
+                                     'retcode retcode))))
+
+ (define (success? retcode)
+   (= retcode (foreign-value "CS_SUCCEED" CS_INT)))
+
+ (define (error-on-non-success thunk location message . arguments)
+   (let ((retcode (thunk)))
+     (if (not (success? retcode))
+         (apply freetds-error location message retcode arguments))))
+
+ (define (allocate-context! version context**)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "cs_ctx_alloc"
+                       CS_INT
+                       (c-pointer (c-pointer "CS_CONTEXT")))
+       version
+       context**))
+    'cs_ctx_alloc
+    "failed to allocate context"))
+
+ (define (initialize-context! context* version)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_init"
+                       (c-pointer "CS_CONTEXT")
+                       CS_INT)
+       context*
+       version))
+    'ct_init
+    "failed to initialize context"))
+
+ (define (allocate-connection! context* connection**)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_con_alloc"
+                       (c-pointer "CS_CONTEXT")
+                       (c-pointer (c-pointer "CS_CONNECTION")))
+       context*
+       connection**))
+    'ct_con_alloc
+    "failed to allocate a connection"))
+
+ (define (connection-property connection*
+                              action
+                              property
+                              buffer*
+                              buffer-length
+                              out-length*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_con_props"
+                       (c-pointer "CS_CONNECTION")
+                       CS_INT
+                       CS_INT
+                       (c-pointer "CS_VOID")
+                       CS_INT
+                       (c-pointer "CS_INT"))
+       connection*
+       action
+       property
+       buffer*
+       buffer-length
+       out-length*))
+    'ct_con_props
+    (format "failed to perform ~a on the property ~a" action property)))
+
+ (define (connection-property-set! connection*
+                                   property
+                                   buffer*
+                                   buffer-length
+                                   out-length*)
+   (connection-property connection*
+                        (foreign-value "CS_SET" CS_INT)
+                        property
+                        buffer*
+                        buffer-length
+                        out-length*))
+
+ (define (connection-property-set-username! connection* username)
+   (connection-property-set! connection*
+                             (foreign-value "CS_USERNAME" CS_INT)
+                             (location username)
+                             (foreign-value "CS_NULLTERM" CS_INT)
+                             (null-pointer)))
+
+ (define (connection-property-set-password! connection* password)
+   (connection-property-set! connection*
+                             (foreign-value "CS_PASSWORD" CS_INT)
+                             (location password)
+                             (foreign-value "CS_NULLTERM" CS_INT)
+                             (null-pointer)))
+
+ (define (connect! connection* server* server-length)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_connect"
+                       (c-pointer "CS_CONNECTION")
+                       (c-pointer "CS_CHAR")
+                       CS_INT)
+       connection*
+       server*
+       server-length))
+    'ct_connect
+    "failed to connect to server"))
+
+ (define make-context
+   (case-lambda
+    (()
+     (let ((version (foreign-value "CS_VERSION_100" CS_INT)))
+       (make-context version)))
+    ((version)
+     (let-location ((context* (c-pointer "CS_CONTEXT")))
+       (allocate-context! version (location context*))
+       (initialize-context! context* version)
+       context*))))
+
+ (define (make-connection context* host username password)
+   (let-location ((connection* (c-pointer "CS_CONNECTION")))
+     (allocate-connection! context* (location connection*))
+     (connection-property-set-username! connection* username)
+     (connection-property-set-password! connection* password)
+     (connect! connection* (location host) (string-length host))
+     connection*)))

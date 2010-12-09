@@ -1,4 +1,22 @@
 # -*- mode: org; -*-
+* TODO abstract away =context*=?
+  no, let's provide it initially; "power users" may yet want to
+  allocate multiple connections per context? if desirable, we can
+  abstract it away later with a connection struct.
+
+  on context vs. connection:
+
+  #+BEGIN_QUOTE
+  The CS-Library routine cs_ctx_alloc allocates a context structure. A
+  context structure is used to store configuration parameters that
+  describe a particular “context,” or operating environment, for a set
+  of server connections. On most platforms, an application can have
+  multiple contexts, although a typical application will need just
+  one.
+  #+END_QUOTE
+* TODO =let-location=
+  it seems like we can use =let-location= when an allocation function
+  is provided by the library; otherwise, use the =make-type*= hack.
 * TODO alist-lib
 * TODO =define-make-type*/type-size/update-type-table!=
   can probably get away with =define-make-type*/type-size=, but what
@@ -17,16 +35,22 @@
      ,  - allocates context and connection, returning them in a connection
      ,    struct.
      ,  - what about database?
+     ,- connection
+     ,  - context*
+     ,  - connection*
      ,- close connection -> void
      ,  - does all the context/connection deallocation.
-     ,- query statement -> result
+     ,- query statement . parameters -> result
      ,  - allocates command.
      ,  - gets as far as =send!=; some sort of result iterator has to handle
      ,    binding and end-of-results, etc.
      ,  - result structure contains a =CS_COMMAND= pointer.
-     ,- # eventually:
-     ,- query statement . parameters -> result or #!eor
-     ,- fetch-row result -> list
+     ,- result (command*)
+     ,- result-map result -> list or #!eor
+     ,- result-for-each result -> (void) or #!eor
+     ,- result-fold result -> value or #!eor
+     ,- with-result-set query (lambda (result) ...) -> value
+     ,- fetch-row result -> list or #!eof
    #+END_SRC
 *** TODO result sets
     every command can be associated with multiple buffers:
@@ -91,6 +115,9 @@
       
       (test-assert (eor-object? #!eor))
     #+END_SRC
+
+    on =CS_END_RESULTS=, let's give an =#!eor=; otherwise, return the
+    results or error.
 ** TODO {un,}parsing
    see the [[http://wiki.call-cc.org/eggref/4/postgresql#type-conversion][postgresql stuff]] on {un,}parsers; not only can you set the
    =default-type-{un,}parsers= parameters, you can pass an
