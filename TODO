@@ -77,12 +77,17 @@
     doesn't it?
 
     #+BEGIN_SRC scheme
+      #!/usr/bin/env chicken-scheme
       ;;; Taking a suggestion from chandler on #scheme: "You can rely on
       ;;; (cons #f #f) to evaluate to an object which is not `eq?' to any
       ;;; other existing object."
       (define eor-object (cons #f #f))
       
       (define (eor-object? object) (eq? object eor-object))
+      
+      (set-read-syntax! 'eor (lambda (port) 'eor-object))
+      
+      (display (eor-object? #!eor))
     #+END_SRC
 ** TODO {un,}parsing
    see the [[http://wiki.call-cc.org/eggref/4/postgresql#type-conversion][postgresql stuff]] on {un,}parsers; not only can you set the
