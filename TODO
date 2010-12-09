@@ -78,6 +78,8 @@
 
     #+BEGIN_SRC scheme
       #!/usr/bin/env chicken-scheme
+      (use test)
+      
       ;;; Taking a suggestion from chandler on #scheme: "You can rely on
       ;;; (cons #f #f) to evaluate to an object which is not `eq?' to any
       ;;; other existing object."
@@ -87,7 +89,7 @@
       
       (set-read-syntax! 'eor (lambda (port) 'eor-object))
       
-      (display (eor-object? #!eor))
+      (test-assert (eor-object? #!eor))
     #+END_SRC
 ** TODO {un,}parsing
    see the [[http://wiki.call-cc.org/eggref/4/postgresql#type-conversion][postgresql stuff]] on {un,}parsers; not only can you set the
