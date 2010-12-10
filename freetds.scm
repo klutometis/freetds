@@ -5,7 +5,11 @@
          chicken
          foreign)
 
- (use lolevel)
+ (use lolevel
+      matchable
+      srfi-1
+      foreigners
+      data-structures)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -71,6 +75,23 @@
                                  type*)))
                              type*)))))))))))
 
+ (define-foreign-record-type
+   (CS_DATAFMT CS_DATAFMT)
+   ;; 132 == CS_MAX_NAME
+   (CS_CHAR (name 132) data-format-name)
+   (CS_INT namelen data-format-name-length data-format-name-length-set!)
+   (CS_INT datatype data-format-datatype data-format-datatype-set!)
+   (CS_INT format data-format-format data-format-format-set!)
+   (CS_INT maxlength data-format-max-length data-format-max-length-set!)
+   (CS_INT scale data-format-scale data-format-scale-set!)
+   (CS_INT precision data-format-precision data-format-precision-set!)
+   (CS_INT status data-format-status data-format-status-set!)
+   (CS_INT count data-format-count data-format-count-set!)
+   (CS_INT usertype data-format-usertype data-format-usertype-set!)
+   ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
+
+ (define-make-type* CS_DATAFMT)
+
  (define-syntax define-type-size
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -82,6 +103,28 @@
                 (%foreign-value (rename 'foreign-value)))
             `(,%define ,type-size (,%foreign-value ,size int))))))))
 
+ (define translate-CS_IMAGE* noop)
+ (define translate-CS_TEXT* noop)
+ (define translate-CS_MONEY4* noop)
+ (define translate-CS_MONEY* noop)
+ (define translate-CS_REAL* noop)
+ (define translate-CS_FLOAT* noop)
+ (define translate-CS_NUMERIC* noop)
+ (define translate-CS_DECIMAL* noop)
+ (define translate-CS_BIGINT* noop)
+ (define translate-CS_INT* noop)
+ (define translate-CS_SMALLINT* noop)
+ (define translate-CS_TINYINT* noop)
+ (define translate-CS_DATETIME4* noop)
+ (define translate-CS_DATETIME* noop)
+ (define translate-CS_VARCHAR* noop)
+ (define translate-CS_LONGCHAR* noop)
+ (define translate-CS_CHAR* noop)
+ (define translate-CS_BIT* noop)
+ (define translate-CS_VARBINARY* noop)
+ (define translate-CS_LONGBINARY* noop)
+ (define translate-CS_BINARY* noop)
+
  (define-syntax define-make-type*/type-size
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -89,14 +132,26 @@
       (match-let (((_ . types) expression))
         (let ((%define-make-type* (rename 'define-make-type*))
               (%define-type-size (rename 'define-type-size))
-              (%begin (rename 'begin)))
+              (%begin (rename 'begin))
+              (%define (rename 'define))
+              (%foreign-value (rename 'foreign-value)))
           (cons
            %begin
-           (map (lambda (type)
-                  `(,%begin
-                    (,%define-make-type* ,type)
-                    (,%define-type-size ,type)))
-                types)))))))
+           (append
+            (map (lambda (type)
+                   `(,%begin
+                     (,%define-make-type* ,type)
+                     (,%define-type-size ,type)))
+                 types)
+            `((,%define datatype->translator
+                        ,(map (lambda (type)
+                                (let ((type-type (sprintf "~a_TYPE" type))
+                                      (translate-type*
+                                       (string->symbol
+                                        (sprintf "translate-~a*" type))))
+                                  `((foreign-value ,type-type CS_INT)
+                                    ,translate-type*)))
+                              types))))))))))
 
  (define-make-type*/type-size
    CS_BINARY
@@ -121,6 +176,7 @@
    CS_TEXT
    CS_IMAGE)
 
+ (define-foreign-type CS_CHAR char)
  (define-foreign-type CS_INT integer32)
  (define-foreign-type CS_RETCODE CS_INT)
 
@@ -312,4 +368,102 @@
                (foreign-value "CS_NULLTERM" CS_INT)
                (foreign-value "CS_UNUSED" CS_INT))
      (send! command*)
-     command*)))
+     command*))
+
+ (define (results! command* result-type*)
+   ((foreign-lambda CS_RETCODE
+                    "ct_results"
+                    (c-pointer "CS_COMMAND")
+                    (c-pointer "CS_INT"))
+    command*
+    result-type*))
+
+ (define (results-info! command* type buffer* buffer-length out-length*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_res_info"
+                       (c-pointer "CS_COMMAND")
+                       CS_INT
+                       (c-pointer "CS_VOID")
+                       CS_INT
+                       (c-pointer "CS_INT"))
+       command*
+       type
+       buffer*
+       buffer-length
+       out-length*))
+    'ct_res_info
+    "failed to get results info on ~a"))
+
+ (define (results-info-column-count! command* column-count*)
+   (results-info! command*
+                  (foreign-value "CS_NUMDATA" CS_INT)
+                  column-count*
+                  (foreign-value "CS_UNUSED" CS_INT)
+                  (null-pointer)))
+
+ (define (describe! command* item data-format*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_describe"
+                       (c-pointer "CS_COMMAND")
+                       CS_INT
+                       (c-pointer "CS_DATAFMT"))
+       command*
+       item
+       data-format*))
+    'ct_describe
+    "failed to describe column"))
+
+ (define (bind! command*
+                item
+                data-format*
+                buffer*
+                copied*
+                indicator*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_bind"
+                       (c-pointer "CS_COMMAND")
+                       CS_INT
+                       (c-pointer "CS_DATAFMT")
+                       (c-pointer "CS_VOID")
+                       (c-pointer "CS_INT")
+                       (c-pointer "CS_SMALLINT"))
+       command*
+       item
+       data-format*
+       buffer*
+       copied*
+       indicator*))
+    'ct_bind
+    "failed to bind statement"))
+
+ #;(define (make-bound-variables command*)
+ (let-location ((result-type CS_INT))
+ (let ((result-status (results! command* (location result-type))))
+ (match result-status
+ ((? success?)
+ (match result-type
+ ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
+ ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
+ ((? row-result?)
+ (let-location ((column-count CS_INT))
+ (results-info-column-count! command* (location column-count))
+ (let ((bound-variables
+ (list-tabulate
+ column-count
+ (lambda (column)
+ (let ((data-format* (make-CS_DATAFMT*)))
+ (describe! command*
+ (add1 column)
+ data-format*)
+ ;; let's have a table here for modifying,
+ ;; if necessary, the data-format*.
+ (let ((data-format-datatype
+ (data-format-datatype data-format*)))
+ 'harro))))))
+ 'oh-jes))))))))))

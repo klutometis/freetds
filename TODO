@@ -53,6 +53,72 @@
      ,- with-result-set query (lambda (result) ...) -> value
      ,- fetch-row result -> list or #!eof
    #+END_SRC
+
+   the =result-{map, ...}= commands have to call =results!= first and
+   test for =CS_END_RESULTS= (returning =#!eor=); or, in the case of
+   =CS_SUCCEED=, should =bind!= and iteratively =row-fetch= until,
+   say, =#!eod= (end of data).
+
+   let's start with, say, =result-values=? it can be abstracted as a
+   case of =result-map=, but let's start simple.
+
+   #+BEGIN_SRC org
+     ,- result-values command* -> ((v00 v01 ... v0m) (v10 v11 ... v1m)
+     ,  ... (vn0 vn1 ... vnm))
+     ,  - let bound-variables (make-bound-variables command*)
+     ,    - if eor-object? bound-variables
+     ,      - #!eor
+     ,      - unfold
+     ,        - end-of-data?
+     ,        - cute row-fetch <> bound-variables
+     ,        - values
+     ,        - command*
+     ,- make-bound-variables command* -> ((variable0 length0 translate0) ...)
+     ,  - let result-status results! command* ...
+     ,    - select result-status
+     ,      - CS_SUCCEED
+     ,        - results-info! ...
+     ,      - CS_END_RESULTS
+     ,        - command-drop! command*
+     ,        - #!eor
+     ,      - CS_FAIL
+     ,        - (ct_cancel CS_CANCEL_ALL)
+     ,          - if CS_FAIL, (cs_close CS_FORCE_CLOSE)
+     ,      - else
+     ,        - error (should we =command-drop!=?)
+     ,- row-fetch command* bound-variables
+     ,  - let-location rows-read ...
+     ,    - let retcode = fetch! command* ...
+     ,      - select retcode
+     ,        - CS_SUCCEED CS_ROW_FAIL
+     ,          - map lambda bound-variable ...
+     ,        - CS_END_DATA
+     ,          - # should we return nil here? depends if there are valid
+     ,            sql statements that return the empty set: update, delete
+     ,            perhaps?
+     ,          - #!eod
+     ,        - CS_FAIL
+     ,          - (ct_cancel CS_CANCEL_ALL)
+     ,            - if CS_FAIL, (cs_close CS_FORCE_CLOSE)
+     ,          - error
+     ,        - else
+     ,          - error (should we =command-drop!=?)
+   #+END_SRC
+
+   fundamental iterator from which map, fold, filter can be built: is
+   it perhaps fold itself?
+
+   #+BEGIN_EXAMPLE
+   17:51 < klutometis> i'm looking for a fundamental iterator with which
+   to implement map, for-each, fold, filter, unfold; would fold itself be
+   a reasonable candidate?
+   17:52 < Riastradh> No, but lambda would be.
+   17:53 < cky> Riastradh++
+   17:53 < klutometis> Riastradh: heh; i think that should become a koan.
+   17:53 < cky> klutometis: I've once tried implementing fold in terms of
+   unfold, and vice versa. It's actually...very challenging (to me).
+   17:53 < Riastradh> Maybe foof-loop too.   
+   #+END_EXAMPLE
 *** TODO result sets
     every command can be associated with multiple buffers:
 
