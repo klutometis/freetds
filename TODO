@@ -1,4 +1,6 @@
 # -*- mode: org; -*-
+* TODO get rid of the implicit table crap in =define-make-type*/type-size=
+  think along the lines of make-type-table, etc.
 * TODO =make-{context, connection, etc.}= -> ={context, connect}=
 * TODO abstract away =context*=?
   no, let's provide it initially; "power users" may yet want to
