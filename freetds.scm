@@ -9,7 +9,8 @@
       matchable
       srfi-1
       foreigners
-      data-structures)
+      data-structures
+      expand-full)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -75,6 +76,17 @@
                                  type*)))
                              type*)))))))))))
 
+ (define-syntax define-type-size
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      (import matchable)
+      (match-let (((_ type) expression))
+        (let ((size (sprintf "sizeof(~a)" type))
+              (type-size (string->symbol (sprintf "~a-size" type))))
+          (let ((%define (rename 'define))
+                (%foreign-value (rename 'foreign-value)))
+            `(,%define ,type-size (,%foreign-value ,size int))))))))
+
  (define-foreign-record-type
    (CS_DATAFMT CS_DATAFMT)
    ;; 132 == CS_MAX_NAME
@@ -92,16 +104,65 @@
 
  (define-make-type* CS_DATAFMT)
 
- (define-syntax define-type-size
+ (define-for-syntax datatypes
+   '(CS_BINARY
+     CS_LONGBINARY
+     CS_VARBINARY
+     CS_BIT
+     CS_CHAR
+     CS_LONGCHAR
+     CS_VARCHAR
+     CS_DATETIME
+     CS_DATETIME4
+     CS_TINYINT
+     CS_SMALLINT
+     CS_INT
+     CS_BIGINT
+     CS_DECIMAL
+     CS_NUMERIC
+     CS_FLOAT
+     CS_REAL
+     CS_MONEY
+     CS_MONEY4
+     CS_TEXT
+     CS_IMAGE))
+
+ (define-syntax define-make-types*/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
-      (import matchable)
-      (match-let (((_ type) expression))
-        (let ((size (sprintf "sizeof(~a)" type))
-              (type-size (string->symbol (sprintf "~a-size" type))))
-          (let ((%define (rename 'define))
-                (%foreign-value (rename 'foreign-value)))
-            `(,%define ,type-size (,%foreign-value ,size int))))))))
+      (let ((%define-make-type* (rename 'define-make-type*))
+            (%begin (rename 'begin)))
+        (cons
+         %begin
+         (map (lambda (type)
+                `(,%define-make-type* ,type))
+              datatypes))))))
+
+ (define-syntax define-type-sizes/datatypes
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      (let ((%define-type-size (rename 'define-type-size))
+            (%begin (rename 'begin)))
+        (cons
+         %begin
+         (map (lambda (type)
+                `(,%define-type-size ,type))
+              datatypes))))))
+
+ (define-make-types*/datatypes)
+ (define-type-sizes/datatypes)
+
+ (define (datatype->integer datatype)
+   (let ((datatype-type (format "~a_TYPE" datatype)))
+     (foreign-value datatype-type CS_INT)))
+
+ (define datatype->make-type*
+   (map (lambda (datatype)
+          (let ((make-datatype*
+                 (string->symbol (format "make-~a*" datatype))))
+            (cons (datatype->integer datatype)
+                  make-datatype*)))
+        datatypes))
 
  (define translate-CS_IMAGE* noop)
  (define translate-CS_TEXT* noop)
@@ -124,57 +185,6 @@
  (define translate-CS_VARBINARY* noop)
  (define translate-CS_LONGBINARY* noop)
  (define translate-CS_BINARY* noop)
-
- (define-syntax define-make-type*/type-size
-   (er-macro-transformer
-    (lambda (expression rename compare)
-      (import matchable)
-      (match-let (((_ . types) expression))
-        (let ((%define-make-type* (rename 'define-make-type*))
-              (%define-type-size (rename 'define-type-size))
-              (%begin (rename 'begin))
-              (%define (rename 'define))
-              (%foreign-value (rename 'foreign-value)))
-          (cons
-           %begin
-           (append
-            (map (lambda (type)
-                   `(,%begin
-                     (,%define-make-type* ,type)
-                     (,%define-type-size ,type)))
-                 types)
-            `((,%define datatype->translator
-                        ,(map (lambda (type)
-                                (let ((type-type (sprintf "~a_TYPE" type))
-                                      (translate-type*
-                                       (string->symbol
-                                        (sprintf "translate-~a*" type))))
-                                  `((foreign-value ,type-type CS_INT)
-                                    ,translate-type*)))
-                              types))))))))))
-
- (define-make-type*/type-size
-   CS_BINARY
-   CS_LONGBINARY
-   CS_VARBINARY
-   CS_BIT
-   CS_CHAR
-   CS_LONGCHAR
-   CS_VARCHAR
-   CS_DATETIME
-   CS_DATETIME4
-   CS_TINYINT
-   CS_SMALLINT
-   CS_INT
-   CS_BIGINT
-   CS_DECIMAL
-   CS_NUMERIC
-   CS_FLOAT
-   CS_REAL
-   CS_MONEY
-   CS_MONEY4
-   CS_TEXT
-   CS_IMAGE)
 
  (define-foreign-type CS_CHAR char)
  (define-foreign-type CS_INT integer32)
