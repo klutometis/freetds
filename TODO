@@ -1,5 +1,11 @@
 # -*- mode: org; -*-
-* TODO get rid of the implicit table crap in =define-make-type*/type-size=
+* CANCELED get rid of the implicit table crap in =define-make-type*/type-size=
+# <<implicit-table-crap>>
+  CLOSED: [2010-12-16 Thu 18:27]
+  - CLOSING NOTE [2010-12-16 Thu 18:28] \\
+    we did worse, and replaced it with three implicit tables:
+    =datatype->make-type*=, =datatype->type-size=,
+    =datatype->translate-type*=.
   think along the lines of make-type-table, etc.
 * TODO =make-{context, connection, etc.}= -> ={context, connect}=
 * TODO abstract away =context*=?
@@ -21,7 +27,10 @@
   it seems like we can use =let-location= when an allocation function
   is provided by the library; otherwise, use the =make-type*= hack.
 * TODO alist-lib
-* TODO =define-make-type*/type-size/update-type-table!=
+* DONE =define-make-type*/type-size/update-type-table!=
+  CLOSED: [2010-12-16 Thu 18:28]
+  - CLOSING NOTE [2010-12-16 Thu 18:28] \\
+    see [[implicit-table-crap]].
   can probably get away with =define-make-type*/type-size=, but what
   about explicit tables for =type->make-type*=, =type->type-size=,
   =type->parse-type=, =type->unparse-type=?

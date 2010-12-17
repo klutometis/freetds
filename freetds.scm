@@ -12,10 +12,34 @@
       data-structures
       expand-full)
 
+ (define alist-sentinel (cons #f #f))
+
+ (define (alist-sentinel? object)
+   (eq? alist-sentinel object))
+
+ (define alist-ref/default
+   (case-lambda
+    ((key alist)
+     (alist-ref/default key
+                        alist
+                        (lambda () (error "could not find key" key alist))))
+    ((key alist default)
+     (let ((value (alist-ref key alist eqv? alist-sentinel)))
+       (if (alist-sentinel? value)
+           (default)
+           value)))))
+
+ (define eor-object (cons #f #f))
+ 
+ (define (eor-object? object) (eq? object eor-object))
+
+ (set-read-syntax! 'eor (lambda (port) 'eor-object))
+
  (foreign-declare "#include <ctpublic.h>")
 
  (define-foreign-type CS_CHAR char)
  (define-foreign-type CS_INT integer32)
+ (define-foreign-type CS_SMALLINT short)
  (define-foreign-type CS_RETCODE CS_INT)
 
  (define-syntax define-make-type*
@@ -246,6 +270,12 @@
 
  (define (success? retcode)
    (= retcode (foreign-value "CS_SUCCEED" CS_INT)))
+
+ (define (row-result? retcode)
+   (= retcode (foreign-value "CS_ROW_RESULT" CS_INT)))
+
+ (define (end-results? retcode)
+   (= retcode (foreign-value "CS_END_RESULTS" CS_INT)))
 
  (define (error-on-non-success thunk location message . arguments)
    (let ((retcode (thunk)))
@@ -495,28 +525,67 @@
     'ct_bind
     "failed to bind statement"))
 
- #;(define (make-bound-variables command*)
- (let-location ((result-type CS_INT))
- (let ((result-status (results! command* (location result-type))))
- (match result-status
- ((? success?)
- (match result-type
- ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
- ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
- ((? row-result?)
- (let-location ((column-count CS_INT))
- (results-info-column-count! command* (location column-count))
- (let ((bound-variables
- (list-tabulate
- column-count
- (lambda (column)
- (let ((data-format* (make-CS_DATAFMT*)))
- (describe! command*
- (add1 column)
- data-format*)
- ;; let's have a table here for modifying,
- ;; if necessary, the data-format*.
- (let ((data-format-datatype
- (data-format-datatype data-format*)))
- 'harro))))))
- 'oh-jes))))))))))
+ (define (command-drop! command*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_cmd_drop"
+                       (c-pointer "CS_COMMAND"))
+       command*)
+      'ct_cmd_drop
+      "failed to drop command")))
+
+ (define (make-bound-variables command*)
+   (let-location ((result-type CS_INT))
+     (let ((result-status (results! command* (location result-type))))
+       (match result-status
+         ((? success?)
+          (match result-type
+            ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
+            ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
+            ((? row-result?)
+             (let-location ((column-count CS_INT))
+               (results-info-column-count! command* (location column-count))
+               (list-tabulate
+                column-count
+                (lambda (column)
+                  (let ((data-format* (make-CS_DATAFMT*)))
+                    (describe! command*
+                               (add1 column)
+                               data-format*)
+                    ;; let's have a table here for modifying,
+                    ;; if necessary, the data-format*.
+                    (let ((datatype
+                           (data-format-datatype data-format*)))
+                      (let ((make-type*
+                             (alist-ref/default
+                              datatype
+                              datatype->make-type*))
+                            (type-size
+                             (alist-ref/default
+                              datatype
+                              datatype->type-size))
+                            (translate-type*
+                             (alist-ref/default
+                              datatype
+                              datatype->translate-type*)))
+                        (let* ((length
+                                (inexact->exact
+                                 (ceiling
+                                  (/ (data-format-max-length
+                                      data-format*)
+                                     type-size))))
+                               (value* (make-type* length)))
+                          (let-location ((valuelen CS_INT)
+                                         (indicator CS_SMALLINT))
+                            (bind! command*
+                                   (+ column 1)
+                                   data-format*
+                                   value*
+                                   (location valuelen)
+                                   (location indicator))
+                            (cons* value* translate-type* length))))))))))))
+         ((? end-results?)
+          ;; #!eor
+          (command-drop! command*)
+          eor-object))))))
