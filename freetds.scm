@@ -182,6 +182,12 @@
  (define-for-syntax (datatype->make-type* datatype)
    (string->symbol (format "make-~a*" datatype)))
 
+ (define-for-syntax (datatype->type-size datatype)
+   (string->symbol (format "~a-size" datatype)))
+
+ (define-for-syntax (datatype->translate-type* datatype)
+   (string->symbol (format "translate-~a*" datatype)))
+
  (define-syntax define-datatype->make-type*/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -195,9 +201,37 @@
                                   `(,%unquote ,(datatype->make-type* type))))
                           datatypes)))))))
 
+ (define-syntax define-datatype->type-size/datatypes
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      (let ((%define (rename 'define))
+            (%quasiquote (rename 'quasiquote))
+            (%unquote (rename 'unquote)))
+        `(,%define datatype->type-size
+                   (,%quasiquote
+                    ,(map (lambda (type)
+                            (cons `(,%unquote ,(datatype->integer type))
+                                  `(,%unquote ,(datatype->type-size type))))
+                          datatypes)))))))
+
+ (define-syntax define-datatype->translate-type*/datatypes
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      (let ((%define (rename 'define))
+            (%quasiquote (rename 'quasiquote))
+            (%unquote (rename 'unquote)))
+        `(,%define datatype->translate-type*
+                   (,%quasiquote
+                    ,(map (lambda (type)
+                            (cons `(,%unquote ,(datatype->integer type))
+                                  `(,%unquote ,(datatype->translate-type* type))))
+                          datatypes)))))))
+
  (define-make-types*/datatypes)
  (define-type-sizes/datatypes)
  (define-datatype->make-type*/datatypes)
+ (define-datatype->type-size/datatypes)
+ (define-datatype->translate-type*/datatypes)
 
  (define (freetds-error location message retcode . arguments)
    (signal (make-composite-condition
