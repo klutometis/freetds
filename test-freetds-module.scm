@@ -12,4 +12,4 @@
                                     password))
        (command (make-command connection
                               "SELECT * from testDatabase.dbo.test")))
-  (debug make-CS_BINARY* CS_BINARY-size))
+  (debug make-CS_BINARY* CS_BINARY-size datatype->make-type*))

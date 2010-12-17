@@ -14,6 +14,10 @@
 
  (foreign-declare "#include <ctpublic.h>")
 
+ (define-foreign-type CS_CHAR char)
+ (define-foreign-type CS_INT integer32)
+ (define-foreign-type CS_RETCODE CS_INT)
+
  (define-syntax define-make-type*
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -149,21 +153,6 @@
                 `(,%define-type-size ,type))
               datatypes))))))
 
- (define-make-types*/datatypes)
- (define-type-sizes/datatypes)
-
- (define (datatype->integer datatype)
-   (let ((datatype-type (format "~a_TYPE" datatype)))
-     (foreign-value datatype-type CS_INT)))
-
- (define datatype->make-type*
-   (map (lambda (datatype)
-          (let ((make-datatype*
-                 (string->symbol (format "make-~a*" datatype))))
-            (cons (datatype->integer datatype)
-                  make-datatype*)))
-        datatypes))
-
  (define translate-CS_IMAGE* noop)
  (define translate-CS_TEXT* noop)
  (define translate-CS_MONEY4* noop)
@@ -186,9 +175,29 @@
  (define translate-CS_LONGBINARY* noop)
  (define translate-CS_BINARY* noop)
 
- (define-foreign-type CS_CHAR char)
- (define-foreign-type CS_INT integer32)
- (define-foreign-type CS_RETCODE CS_INT)
+ (define-for-syntax (datatype->integer datatype)
+   (let ((datatype-type (format "~a_TYPE" datatype)))
+     `(foreign-value ,datatype-type CS_INT)))
+
+ (define-for-syntax (datatype->make-type* datatype)
+   (string->symbol (format "make-~a*" datatype)))
+
+ (define-syntax define-datatype->make-type*/datatypes
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      (let ((%define (rename 'define))
+            (%quasiquote (rename 'quasiquote))
+            (%unquote (rename 'unquote)))
+        `(,%define datatype->make-type*
+                   (,%quasiquote
+                    ,(map (lambda (type)
+                            (cons `(,%unquote ,(datatype->integer type))
+                                  `(,%unquote ,(datatype->make-type* type))))
+                          datatypes)))))))
+
+ (define-make-types*/datatypes)
+ (define-type-sizes/datatypes)
+ (define-datatype->make-type*/datatypes)
 
  (define (freetds-error location message retcode . arguments)
    (signal (make-composite-condition
