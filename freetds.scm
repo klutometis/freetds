@@ -8,9 +8,15 @@
  (use lolevel
       matchable
       srfi-1
+      srfi-4
+      srfi-19
       foreigners
       data-structures
-      expand-full)
+      expand-full
+      foof-loop
+      numbers
+      miscmacros
+      debug)
 
  (define alist-sentinel (cons #f #f))
 
@@ -39,6 +45,7 @@
 
  (define-foreign-type CS_CHAR char)
  (define-foreign-type CS_INT integer32)
+ (define-foreign-type CS_UINT unsigned-integer32)
  (define-foreign-type CS_SMALLINT short)
  (define-foreign-type CS_RETCODE CS_INT)
 
@@ -130,6 +137,52 @@
    (CS_INT usertype data-format-usertype data-format-usertype-set!)
    ((c-pointer "CS_LOCALE") locale data-format-locale data-format-locale-set!))
 
+ (define-foreign-record-type
+   (CS_DATETIME CS_DATETIME)
+   (CS_INT dtdays datetime-days)
+   (CS_INT dttime datetime-time))
+
+ (define-foreign-record-type
+   (CS_DATEREC CS_DATEREC)
+   (CS_INT dateyear daterec-year)
+   (CS_INT datemonth daterec-month)
+   (CS_INT datedmonth daterec-dmonth)
+   (CS_INT datedyear daterec-dyear)
+   (CS_INT datedweek daterec-week)
+   (CS_INT datehour daterec-hour)
+   (CS_INT dateminute daterec-minute)
+   (CS_INT datesecond daterec-second)
+   (CS_INT datemsecond daterec-msecond)
+   (CS_INT datetzone daterec-timezone))
+
+ (define-foreign-record-type
+   (CS_VARBINARY CS_VARBINARY)
+   (CS_SMALLINT len varbinary-length)
+   (CS_CHAR (array 256) varbinary-array))
+
+ (define-foreign-record-type
+   (CS_VARCHAR CS_VARCHAR)
+   (CS_SMALLINT len varchar-length)
+   (CS_CHAR (str 256) varchar-string))
+
+ (define-foreign-record-type
+   (CS_MONEY CS_MONEY)
+   (CS_INT mnyhigh money-high)
+   (CS_UINT mnylow money-low))
+
+ (define-foreign-record-type
+   (CS_MONEY4 CS_MONEY4)
+   (CS_INT mny4 small-money-value))
+
+ (define-foreign-record-type
+   (CS_NUMERIC CS_NUMERIC)
+   (CS_CHAR precision numeric-precision)
+   (CS_CHAR scale numeric-scale)
+   ;; 33 = CS_MAX_NUMLEN
+   (CS_CHAR (array 33) numeric-array))
+
+ (define-make-type* CS_DATAFMT)
+ (define-make-type* CS_DATEREC)
  (define-make-type* CS_DATAFMT)
 
  (define-for-syntax datatypes
@@ -177,27 +230,184 @@
                 `(,%define-type-size ,type))
               datatypes))))))
 
- (define translate-CS_IMAGE* noop)
- (define translate-CS_TEXT* noop)
- (define translate-CS_MONEY4* noop)
- (define translate-CS_MONEY* noop)
- (define translate-CS_REAL* noop)
- (define translate-CS_FLOAT* noop)
- (define translate-CS_NUMERIC* noop)
- (define translate-CS_DECIMAL* noop)
- (define translate-CS_BIGINT* noop)
- (define translate-CS_INT* noop)
- (define translate-CS_SMALLINT* noop)
- (define translate-CS_TINYINT* noop)
- (define translate-CS_DATETIME4* noop)
- (define translate-CS_DATETIME* noop)
- (define translate-CS_VARCHAR* noop)
- (define translate-CS_LONGCHAR* noop)
- (define translate-CS_CHAR* noop)
- (define translate-CS_BIT* noop)
- (define translate-CS_VARBINARY* noop)
- (define translate-CS_LONGBINARY* noop)
- (define translate-CS_BINARY* noop)
+ (define (char-null? char)
+   (char=? char #\nul))
+
+ (define char-vector->string
+   (case-lambda
+    ((char-vector char-ref)
+     (char-vector->string char-ref +inf))
+    ((char-vector char-ref max-length)
+     (define (chars->string chars)
+       (reverse-list->string chars))
+     (let loop ((index 0)
+                (chars '())
+                (length max-length))
+       (if (zero? length)
+           (chars->string chars)
+           (let ((char (char-ref char-vector index)))
+             (if (char-null? char)
+                 (chars->string chars)
+                 (loop (+ index 1)
+                       (cons char chars)
+                       (- length 1)))))))))
+ (define CS_CHAR*->string
+   (case-lambda
+    ((vector) (CS_CHAR*->string vector +inf))
+    ((vector max-length)
+     (char-vector->string
+      vector
+      (lambda (vector i)
+        ((foreign-primitive
+          CS_CHAR
+          (((c-pointer "CS_CHAR") vector)
+           (int i))
+          "C_return(vector[i]);") vector i))
+      max-length))))
+
+ (define (CS_DATETIME*->srfi-19-date context* datetime* type)
+   (let ((daterec* (make-CS_DATEREC*)))
+     (error-on-non-success
+      (lambda ()
+        ((foreign-lambda CS_RETCODE
+                         "cs_dt_crack"
+                         (c-pointer "CS_CONTEXT")
+                         CS_INT
+                         (c-pointer "CS_VOID")
+                         (c-pointer "CS_DATEREC"))
+         context*
+         type
+         datetime*
+         daterec*))
+      'cs_dt_crack
+      "failed to crack date")
+     (make-date (* (daterec-msecond daterec*) 1000000)
+                (daterec-second daterec*)
+                (daterec-minute daterec*)
+                (daterec-hour daterec*)
+                (daterec-dmonth daterec*)
+                (add1 (daterec-month daterec*))
+                (daterec-year daterec*)
+                (daterec-timezone daterec*))))
+
+ (define-syntax CS_INT*->number
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      (import matchable)
+      (match-let (((_ int* type return-type) expression))
+        (let ((%foreign-safe-lambda*
+               (rename 'foreign-safe-lambda*)))
+          `((,%foreign-safe-lambda*
+             ,return-type
+             (((c-pointer ,type) i))
+             "C_return((int) *i);")
+            ,int*))))))
+
+ (define (CS_BINARY*->vector binary* length)
+   (let ((vector (make-u8vector length 0)))
+     ((foreign-safe-lambda*
+       void
+       (((c-pointer "CS_BINARY") from)
+        (u8vector to)
+        (int length))
+       "memcpy(to, from, length * sizeof(CS_BINARY));")
+      binary*
+      vector
+      length) 
+     vector))
+
+ (define (translate-CS_BINARY* context* binary* length)
+   (CS_BINARY*->vector binary* length))
+ (define translate-CS_LONGBINARY* translate-CS_BINARY*)
+ (define (translate-CS_VARBINARY* context* varbinary* length)
+   (debug length (varbinary-length varbinary*))
+   ;; can't seems to retrieve a pointer to the beginning of the array
+   ;; with object->pointer; resorting, therefore, to
+   ;; foreign-safe-lambda*.
+   ;; (CS_BINARY*->vector ((foreign-safe-lambda*
+   ;;                       (c-pointer "CS_CHAR")
+   ;;                       (((c-pointer "CS_VARBINARY") varbinary))
+   ;;                       "C_return(varbinary->array);")
+   ;;                      varbinary*)
+   ;;                     (varbinary-length varbinary*)
+   ;;                     #;256)
+   (CS_BINARY*->vector varbinary*
+                       256))
+;;; boolean transformation?
+ (define (translate-CS_BIT* context* bit* length)
+   (not (zero? (CS_INT*->number bit* "CS_BIT" short))))
+ (define (translate-CS_CHAR* context* char* length)
+   (CS_CHAR*->string char* length))
+ (define translate-CS_LONGCHAR*
+   translate-CS_CHAR*)
+ (define (translate-CS_VARCHAR* context* varchar* length)
+   (CS_CHAR*->string (varchar-string varchar*)
+                     (varchar-length varchar*)))
+ (define (translate-CS_DATETIME* context* datetime* length)
+   (CS_DATETIME*->srfi-19-date
+    context*
+    datetime*
+    (foreign-value "CS_DATETIME_TYPE" CS_INT)))
+ (define (translate-CS_DATETIME4* context* datetime4* length)
+   (CS_DATETIME*->srfi-19-date
+    context*
+    datetime4*
+    (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
+ (define (translate-CS_TINYINT* context* tinyint* length)
+   (CS_INT*->number tinyint* "CS_TINYINT" short))
+ (define (translate-CS_SMALLINT* context* smallint* length)
+   (CS_INT*->number smallint* "CS_SMALLINT" short))
+ (define (translate-CS_INT* context* int* length)
+   (CS_INT*->number int* "CS_INT" integer32))
+ (define (translate-CS_BIGINT* context* bigint* length)
+   (CS_INT*->number bigint* "CS_BIGINT" integer64))
+ (define (cardinality integer base)
+   (loop ((for power (up-from 0))
+          (until (> (expt base power) integer))) => power))
+ (define (translate-CS_NUMERIC* context* numeric* length)
+   (let ((maximum-number-length (foreign-value "CS_MAX_NUMLEN" int)))
+     (let ((positive? (zero? (char->integer (numeric-array numeric* 0))))
+           (base-256-digits
+            (cardinality (expt 10 (sub1
+                                   (char->integer
+                                    (numeric-precision numeric*))))
+                         256)))
+       (let add ((augend 0) (index 1))
+         (if (> index base-256-digits)
+             (let* ((scale (char->integer (numeric-scale numeric*)))
+                    (number
+                     (if (zero? scale)
+                         augend
+                         (exact->inexact (/ augend (expt 10 scale))))))
+               (if positive? number (* number -1)))
+             (add (let ((base (char->integer (numeric-array numeric* index))))
+                    (if (zero? base)
+                        augend
+                        (+ augend
+                           (* base (expt 256 (- base-256-digits index))))))
+                  (+ index 1)))))))
+ (define translate-CS_DECIMAL* translate-CS_NUMERIC*)
+ (define (translate-CS_FLOAT* context* float* length)
+   ((foreign-safe-lambda*
+     double
+     (((c-pointer "CS_FLOAT") n))
+     "C_return((double) *n);")
+    float*))
+ (define (translate-CS_REAL* context* real* length)
+   ((foreign-safe-lambda*
+     float
+     (((c-pointer "CS_REAL") n))
+     "C_return((float) *n);")
+    real*))
+ (define (translate-CS_MONEY* context* money* length)
+   (inexact->exact
+    (+ (* (money-high money*) (expt 2 32))
+       (money-low money*))))
+ (define (translate-CS_MONEY4* context* small-money* length)
+   (small-money-value small-money*))
+ (define (translate-CS_TEXT* context* text* length)
+   (CS_CHAR*->string text* length))
+ (define translate-CS_IMAGE* translate-CS_TEXT*)
 
  (define-for-syntax (datatype->integer datatype)
    (let ((datatype-type (format "~a_TYPE" datatype)))
@@ -273,6 +483,9 @@
 
  (define (row-result? retcode)
    (= retcode (foreign-value "CS_ROW_RESULT" CS_INT)))
+
+ (define (row-fail? retcode)
+   (= retcode (foreign-value "CS_ROW_FAIL" CS_INT)))
 
  (define (end-results? retcode)
    (= retcode (foreign-value "CS_END_RESULTS" CS_INT)))
@@ -531,9 +744,23 @@
       ((foreign-lambda CS_RETCODE
                        "ct_cmd_drop"
                        (c-pointer "CS_COMMAND"))
-       command*)
-      'ct_cmd_drop
-      "failed to drop command")))
+       command*))
+    'ct_cmd_drop
+    "failed to drop command"))
+
+ (define (fetch! command* type offset option rows-read*)
+   ((foreign-lambda CS_RETCODE
+                    "ct_fetch"
+                    (c-pointer "CS_COMMAND")
+                    CS_INT
+                    CS_INT
+                    CS_INT
+                    (c-pointer CS_INT))
+    command*
+    type
+    offset
+    option
+    rows-read*))
 
  (define (make-bound-variables command*)
    (let-location ((result-type CS_INT))
@@ -588,4 +815,22 @@
          ((? end-results?)
           ;; #!eor
           (command-drop! command*)
-          eor-object))))))
+          eor-object)))))
+
+ (define (row-fetch context* command* bound-variables)
+   (let-location ((rows-read int))
+     (let ((retcode (fetch! command*
+                            (foreign-value "CS_UNUSED" CS_INT)
+                            (foreign-value "CS_UNUSED" CS_INT)
+                            (foreign-value "CS_UNUSED" CS_INT)
+                            (location rows-read))))
+       (match retcode
+         ((? success? row-fail?)
+          (map (lambda (bound-variable)
+                 (match-let (((value translate-type* . length)
+                              bound-variable))
+                   (translate-type* context*
+                                    value
+                                    length)))
+               bound-variables))
+         (_ eor-object))))))

@@ -11,9 +11,6 @@
                                     username
                                     password))
        (command (make-command connection
-                              "SELECT * from testDatabase.dbo.test")))
-  (debug make-CS_BINARY*
-         CS_BINARY-size
-         datatype->make-type*
-         datatype->type-size
-         datatype->translate-type*))
+                              "SELECT * from testDatabase.dbo.test"))
+       (bound-variables (make-bound-variables command)))
+  (debug (row-fetch context command bound-variables)))
