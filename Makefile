@@ -12,3 +12,6 @@ test-module:
 
 clean-module:
 	rm -vf freetds.{c,o,so} freetds.import.*
+
+db:
+	tsql -S $(HOST):1344 -U freetds -P freetds < test.sql

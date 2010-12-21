@@ -57,4 +57,35 @@ INSERT INTO test VALUES (
        N'oeöutnh',
        N'日本語'
        );
+INSERT INTO test VALUES (
+       -- 16,
+       -- 16777216,
+       -- CONVERT(VARBINARY(256), '0x100000', 1),
+       -- 65536,
+       -- power(2, 8) - 1,
+       -- power(2, 8) - 1,
+       -- power(2, 8) - 1,
+       1,
+       1,
+       1,
+       'harro',
+       'harro',
+       34000,
+       34000,
+       12,
+       12,
+       12,
+       256,
+       -12.1,
+       1.1,
+       12.1,
+       12.1,
+       -$4294967296.50,
+       $12.50,
+       'oeutnh',
+       'oeutnh',
+       'oeutnh',
+       N'oeöutnh',
+       N'日本語'
+       );
 go

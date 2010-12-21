@@ -41,6 +41,12 @@
 
  (set-read-syntax! 'eor (lambda (port) 'eor-object))
 
+ (define eod-object (cons #f #f))
+ 
+ (define (eod-object? object) (eq? object eod-object))
+
+ (set-read-syntax! 'eod (lambda (port) 'eod-object))
+
  (foreign-declare "#include <ctpublic.h>")
 
  (define-foreign-type CS_CHAR char)
@@ -490,6 +496,12 @@
  (define (end-results? retcode)
    (= retcode (foreign-value "CS_END_RESULTS" CS_INT)))
 
+ (define (end-data? retcode)
+   (= retcode (foreign-value "CS_END_DATA" CS_INT)))
+
+ (define (fail? retcode)
+   (= retcode (foreign-value "CS_FAIL" CS_INT)))
+
  (define (error-on-non-success thunk location message . arguments)
    (let ((retcode (thunk)))
      (if (not (success? retcode))
@@ -833,4 +845,26 @@
                                     value
                                     length)))
                bound-variables))
-         (_ eor-object))))))
+         ((? fail?)
+          ;; cancel
+          ;; fail again -> close
+          (command-drop! command*)
+          (freetds-error 'row-fetch
+                         "fetch! returned CS_FAIL"
+                         retcode))
+         ((? end-data?)
+          eod-object)
+         (_
+          (freetds-error 'row-fetch
+                         "fetch! returned unknown retcode"
+                         retcode))))))
+
+ (define (result-values context* command*)
+   (let ((bound-variables (make-bound-variables command*)))
+     (if (eor-object? bound-variables)
+         eor-object
+         (let next ((results '()))
+           (let ((row (row-fetch context* command* bound-variables)))
+             (if (eod-object? row)
+                 results
+                 (next (cons row results)))))))))

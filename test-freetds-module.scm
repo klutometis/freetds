@@ -13,4 +13,4 @@
        (command (make-command connection
                               "SELECT * from testDatabase.dbo.test"))
        (bound-variables (make-bound-variables command)))
-  (debug (row-fetch context command bound-variables)))
+  (debug (result-values context command)))
