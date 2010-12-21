@@ -326,7 +326,7 @@
    (CS_BINARY*->vector binary* length))
  (define translate-CS_LONGBINARY* translate-CS_BINARY*)
  (define (translate-CS_VARBINARY* context* varbinary* length)
-   (debug length (varbinary-length varbinary*))
+   #;(debug length (varbinary-length varbinary*))
    ;; can't seems to retrieve a pointer to the beginning of the array
    ;; with object->pointer; resorting, therefore, to
    ;; foreign-safe-lambda*.
@@ -501,6 +501,12 @@
 
  (define (fail? retcode)
    (= retcode (foreign-value "CS_FAIL" CS_INT)))
+
+ (define (command-done? retcode)
+   (= retcode (foreign-value "CS_CMD_DONE" CS_INT)))
+
+ (define (command-succeed? retcode)
+   (= retcode (foreign-value "CS_CMD_SUCCEED" CS_INT)))
 
  (define (error-on-non-success thunk location message . arguments)
    (let ((retcode (thunk)))
@@ -760,6 +766,38 @@
     'ct_cmd_drop
     "failed to drop command"))
 
+ (define (connection-close! connection*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_con_drop"
+                       (c-pointer "CS_CONNECTION"))
+       connection*))
+    'ct_con_drop
+    "failed to close connection"))
+
+ (define (context-exit! context*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_exit"
+                       (c-pointer "CS_CONTEXT")
+                       CS_INT)
+       context*
+       (foreign-value "CS_UNUSED" int)))
+    'ct_exit
+    "failed to exit context"))
+
+ (define (context-drop! context*)
+   (error-on-non-success
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "cs_ctx_drop"
+                       (c-pointer "CS_CONTEXT"))
+       context*))
+    'cs_ctx_drop
+    "failed to drop context"))
+
  (define (fetch! command* type offset option rows-read*)
    ((foreign-lambda CS_RETCODE
                     "ct_fetch"
@@ -774,7 +812,39 @@
     option
     rows-read*))
 
- (define (make-bound-variables command*)
+ (define cancel!
+   (case-lambda
+    ((connection* command*)
+     (cancel! connection*
+              command*
+              (foreign-value "CS_CANCEL_ALL" CS_INT)))
+    ((connection* command* type)
+     ((foreign-lambda CS_RETCODE
+                      "ct_cancel"
+                      (c-pointer "CS_CONNECTION")
+                      (c-pointer "CS_COMMAND")
+                      CS_INT)
+      connection*
+      command*
+      type))))
+
+ (define close!
+   (case-lambda
+    ((connection*)
+     (close! connection* (foreign-value "CS_FORCE_CLOSE" CS_INT)))
+    ((connection* option)
+     (error-on-non-success
+      (lambda ()
+        ((foreign-lambda CS_RETCODE
+                         "ct_close"
+                         (c-pointer "CS_CONNECTION")
+                         CS_INT)
+         connection*
+         option))
+      'ct_close
+      "failed to close connection"))))
+
+ (define (make-bound-variables connection* command*)
    (let-location ((result-type CS_INT))
      (let ((result-status (results! command* (location result-type))))
        (match result-status
@@ -802,6 +872,7 @@
                               datatype->make-type*))
                             (type-size
                              (alist-ref/default
+
                               datatype
                               datatype->type-size))
                             (translate-type*
@@ -823,11 +894,36 @@
                                    value*
                                    (location valuelen)
                                    (location indicator))
-                            (cons* value* translate-type* length))))))))))))
+                            (cons* value* translate-type* length))))))))))
+            ((? command-done?)
+             ;; is this appropriate? do we need to deallocate the
+             ;; command here?
+             eor-object)
+            (_
+             (freetds-error 'make-bound-variables
+                            "ct_results returned a bizarre result-type"
+                            result-type))))
+         ((? fail?)
+          (let ((retcode (cancel! connection* command*)))
+            (match retcode
+              ((? fail?)
+               (close! connection*)
+               (freetds-error 'make-bound-variables
+                              (string-append "ct_results and ct_cancel failed, "
+                                             "prompting the connection to close")
+                              retcode))
+              (_
+               (freetds-error 'make-bound-variables
+                              "ct_results failed, cancelling command"
+                              retcode)))))
          ((? end-results?)
           ;; #!eor
           (command-drop! command*)
-          eor-object)))))
+          eor-object)
+         (_
+          (freetds-error 'make-bound-variables
+                         "ct_results returned a bizarre result status"
+                         result-status))))))
 
  (define (row-fetch context* command* bound-variables)
    (let-location ((rows-read int))
@@ -859,12 +955,45 @@
                          "fetch! returned unknown retcode"
                          retcode))))))
 
- (define (result-values context* command*)
-   (let ((bound-variables (make-bound-variables command*)))
+ (define (result-values context* connection* command*)
+   (let ((bound-variables (make-bound-variables connection* command*)))
      (if (eor-object? bound-variables)
          eor-object
          (let next ((results '()))
            (let ((row (row-fetch context* command* bound-variables)))
              (if (eod-object? row)
                  results
-                 (next (cons row results)))))))))
+                 (next (cons row results))))))))
+
+ (define (call-with-result-set connection* query process-command)
+   (let ((command* (make-command connection* query)))
+     (dynamic-wind
+         noop
+         (lambda () (process-command command*))
+         (lambda ()
+           (cancel! connection* command*)
+           (command-drop! command*)))))
+
+ (define (call-with-context process-context)
+   (let ((context* (make-context)))
+     (dynamic-wind
+         noop
+         (lambda () (process-context context*))
+         (lambda ()
+           (context-exit! context*)
+           (context-drop! context*)))))
+
+ (define (call-with-connection context*
+                               server
+                               username
+                               password
+                               process-connection)
+   (let ((connection* (make-connection context*
+                                       server
+                                       username
+                                       password)))
+     (dynamic-wind
+         noop
+         (lambda () (process-connection connection*))
+         (lambda ()
+           (connection-close! connection*))))))

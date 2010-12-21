@@ -5,12 +5,16 @@
        (make-CS_BINARY*)
        CS_BINARY-size)
 (include "test-freetds-secret.scm")
-(let* ((context (make-context))
-       (connection (make-connection context
-                                    server
-                                    username
-                                    password))
-       (command (make-command connection
-                              "SELECT * from testDatabase.dbo.test"))
-       (bound-variables (make-bound-variables command)))
-  (debug (result-values context command)))
+(call-with-context
+ (lambda (context)
+   (call-with-connection
+    context
+    server
+    username
+    password
+    (lambda (connection)
+      (call-with-result-set
+       connection
+       "SELECT * from testDatabase.dbo.test"
+       (lambda (command)
+         (debug (result-values context connection command))))))))
