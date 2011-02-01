@@ -866,6 +866,17 @@
                     ;; if necessary, the data-format*.
                     (let ((datatype
                            (data-format-datatype data-format*)))
+                      (select datatype
+                        (((foreign-value "CS_CHAR_TYPE" CS_INT)
+                          (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
+                          (foreign-value "CS_TEXT_TYPE" CS_INT)
+                          (foreign-value "CS_VARCHAR_TYPE" CS_INT)
+                          (foreign-value "CS_BINARY_TYPE" CS_INT)
+                          (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
+                          (foreign-value "CS_VARBINARY_TYPE" CS_INT))
+                         (data-format-format-set!
+                          data-format*
+                          (foreign-value "CS_FMT_PADNULL" CS_INT))))
                       (let ((make-type*
                              (alist-ref/default
                               datatype
@@ -971,7 +982,9 @@
          noop
          (lambda () (process-command command*))
          (lambda ()
-           (cancel! connection* command*)
+           ;; Only cancel the command here, so that the connection is
+           ;; reusable.
+           (cancel! (null-pointer) command*)
            (command-drop! command*)))))
 
  (define (call-with-context process-context)
