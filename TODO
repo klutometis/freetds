@@ -1,4 +1,6 @@
 # -*- mode: org; -*-
+* TODO select database when connecting
+* TODO fix the fucking memory problems (unusable?)
 * CANCELED get rid of the implicit table crap in =define-make-type*/type-size=
 # <<implicit-table-crap>>
   CLOSED: [2010-12-16 Thu 18:27]
