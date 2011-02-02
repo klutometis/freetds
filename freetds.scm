@@ -5,6 +5,8 @@
          chicken
          foreign)
 
+ (import-for-syntax matchable)
+
  (use lolevel
       matchable
       srfi-1
@@ -58,7 +60,6 @@
  (define-syntax define-make-type*
    (er-macro-transformer
     (lambda (expression rename compare)
-      (import matchable)
       (match-let (((_ type) expression))
         (let ((malloc
                (sprintf "C_return(malloc(length * (sizeof(~a))));"
@@ -120,7 +121,6 @@
  (define-syntax define-type-size
    (er-macro-transformer
     (lambda (expression rename compare)
-      (import matchable)
       (match-let (((_ type) expression))
         (let ((size (sprintf "sizeof(~a)" type))
               (type-size (string->symbol (sprintf "~a-size" type))))
@@ -299,7 +299,6 @@
  (define-syntax CS_INT*->number
    (er-macro-transformer
     (lambda (expression rename compare)
-      (import matchable)
       (match-let (((_ int* type return-type) expression))
         (let ((%foreign-safe-lambda*
                (rename 'foreign-safe-lambda*)))
