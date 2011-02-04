@@ -20,7 +20,7 @@
        (lambda (command) (debug (result-values context connection command))))
       (call-with-result-set
        connection
-       ((lambda () (format "INSERT INTO #harro VALUES(~a)" 1)))
+       (format "INSERT INTO #harro VALUES(~a)" 1)
        (lambda (command) (debug (result-values context connection command))))
       (call-with-result-set
        connection

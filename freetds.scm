@@ -18,7 +18,8 @@
       foof-loop
       numbers
       miscmacros
-      debug)
+      debug
+      syslog)
 
  (define alist-sentinel (cons #f #f))
 
@@ -651,7 +652,8 @@
                        "ct_command"
                        (c-pointer "CS_COMMAND")
                        CS_INT
-                       (const (c-pointer "CS_VOID"))
+                       ;; (const (c-pointer "CS_VOID"))
+                       (const c-string)
                        CS_INT
                        CS_INT)
        command*
@@ -677,7 +679,7 @@
      (allocate-command! connection* (location command*))
      (command! command*
                (foreign-value "CS_LANG_CMD" CS_INT)
-               (location query)
+               query
                (foreign-value "CS_NULLTERM" CS_INT)
                (foreign-value "CS_UNUSED" CS_INT))
      (send! command*)
@@ -977,6 +979,8 @@
                  results
                  (next (cons row results))))))))
 
+ ;; this version won't even let me use the ((lambda () (format ...)))
+ ;; trick for procedural strings.
  #;(define (call-with-result-set connection* query process-command)
    (let ((command* #f))
      (dynamic-wind
