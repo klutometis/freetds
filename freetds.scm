@@ -909,6 +909,8 @@
              ;; is this appropriate? do we need to deallocate the
              ;; command here?
              eor-object)
+            ((? command-succeed?)
+             '())
             (_
              (freetds-error 'make-bound-variables
                             "ct_results returned a bizarre result-type"
