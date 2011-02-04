@@ -18,8 +18,7 @@
       foof-loop
       numbers
       miscmacros
-      debug
-      syslog)
+      debug)
 
  (define alist-sentinel (cons #f #f))
 
