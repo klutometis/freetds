@@ -16,11 +16,11 @@
          (debug (result-values context connection command) (result-values context connection command))))
       (call-with-result-set
        connection
-       "CREATE TABLE #harro (id INT)"
+       "CREATE TABLE #harro (id INT PRIMARY KEY)"
        (lambda (command) (debug (result-values context connection command))))
       (call-with-result-set
        connection
-       "INSERT INTO #harro VALUES(1)"
+       ((lambda () (format "INSERT INTO #harro VALUES(~a)" 1)))
        (lambda (command) (debug (result-values context connection command))))
       (call-with-result-set
        connection

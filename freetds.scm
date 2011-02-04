@@ -977,7 +977,18 @@
                  results
                  (next (cons row results))))))))
 
- (define (call-with-result-set connection* query process-command)
+ #;(define (call-with-result-set connection* query process-command)
+   (let ((command* #f))
+     (dynamic-wind
+         (lambda () (set! command* (make-command connection* query)))
+         (lambda () (process-command command*))
+         (lambda ()
+           ;; Only cancel the command here, so that the connection is
+           ;; reusable.
+           (cancel! (null-pointer) command*)
+           (command-drop! command*)))))
+
+  (define (call-with-result-set connection* query process-command)
    (let ((command* (make-command connection* query)))
      (dynamic-wind
          noop
