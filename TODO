@@ -1,5 +1,68 @@
 # -*- mode: org; -*-
+* TODO [#A] determining whether data is NULL
+  should we zero the memory first? maybe it doesn't touch it. never
+  mind; see guide, p. 55:
+
+  #+BEGIN_QUOTE
+  When a row containing NULL values is fetched from a server,
+  Client-Library substitutes specified “null substitution values” for
+  the null columns when copying the row data to program variables.
+
+  #+BEGIN_EXAMPLE
+  Destination type    Null substitution value
+  CS_BINARY_TYPE      Empty array
+  CS_VARBINARY_TYPE   Empty array
+  CS_BIT_TYPE         0
+  CS_CHAR_TYPE        Empty string
+  CS_VARCHAR_TYPE     Empty string
+  CS_DATE_TYPE        4 bytes of zeros
+  CS_DATETIME_TYPE    8 bytes of zeros
+  CS_DATETIME4_TYPE   4 bytes of zeros
+  CS_TINYINT_TYPE     0
+  CS_SMALLINT_TYPE    0
+  CS_INT_TYPE         0
+  CS_DECIMAL_TYPE     0.0 (with default scale and precision)
+  CS_NUMERIC_TYPE     0.0 (with default scale and precision)
+  CS_FLOAT_TYPE       0.0
+  CS_REAL_TYPE        0.0
+  CS_MONEY_TYPE       $0.0
+  CS_MONEY4_TYPE      $0.0
+  CS_BOUNDARY_TYPE    Empty string
+  CS_SENSITIVITY_TYPE Empty string
+  CS_TEXT_TYPE        Empty string
+  CS_TIME_TYPE        4 bytes of zeros
+  CS_IMAGE_TYPE       Empty array
+  #+END_EXAMPLE
+
+  To change null substitution values, an application can call the
+  CS-Library routine =cs_setnull=.
+  #+END_QUOTE
+
+  postgre has a =PQgetisnull=, by the way; and the egg returns
+  =(sql-null)=.
+
+  this is top priority now, unfortunately, especially with dates;
+  which throw an error when NULL.
 * TODO select database when connecting
+  #+BEGIN_SRC scheme :tangle test-use.scm :shebang #!/usr/bin/env chicken-scheme
+    (use freetds debug)
+    (include "test-freetds-secret.scm")
+    (call-with-context
+     (lambda (context)
+       (call-with-connection
+        context
+        server
+        username
+        password
+        database
+        (lambda (connection)
+          (call-with-result-set
+           connection
+           "SELECT TOP 256 PhysicianId from ttAccession"
+           (lambda (command)
+             (debug (result-values context connection command))))))))
+    
+  #+END_SRC
 * TODO fix the fucking memory problems (unusable?)
 * CANCELED get rid of the implicit table crap in =define-make-type*/type-size=
 # <<implicit-table-crap>>
@@ -331,47 +394,6 @@
   an extra query every time? is it the case that you have no idea how
   many 0s are significant? i think so. or is it the case that 256
   corresponds to only 4 bytes?
-* TODO determining whether data is NULL
-  should we zero the memory first? maybe it doesn't touch it. never
-  mind; see guide, p. 55:
-
-  #+BEGIN_QUOTE
-  When a row containing NULL values is fetched from a server,
-  Client-Library substitutes specified “null substitution values” for
-  the null columns when copying the row data to program variables.
-
-  #+BEGIN_EXAMPLE
-  Destination type    Null substitution value
-  CS_BINARY_TYPE      Empty array
-  CS_VARBINARY_TYPE   Empty array
-  CS_BIT_TYPE         0
-  CS_CHAR_TYPE        Empty string
-  CS_VARCHAR_TYPE     Empty string
-  CS_DATE_TYPE        4 bytes of zeros
-  CS_DATETIME_TYPE    8 bytes of zeros
-  CS_DATETIME4_TYPE   4 bytes of zeros
-  CS_TINYINT_TYPE     0
-  CS_SMALLINT_TYPE    0
-  CS_INT_TYPE         0
-  CS_DECIMAL_TYPE     0.0 (with default scale and precision)
-  CS_NUMERIC_TYPE     0.0 (with default scale and precision)
-  CS_FLOAT_TYPE       0.0
-  CS_REAL_TYPE        0.0
-  CS_MONEY_TYPE       $0.0
-  CS_MONEY4_TYPE      $0.0
-  CS_BOUNDARY_TYPE    Empty string
-  CS_SENSITIVITY_TYPE Empty string
-  CS_TEXT_TYPE        Empty string
-  CS_TIME_TYPE        4 bytes of zeros
-  CS_IMAGE_TYPE       Empty array
-  #+END_EXAMPLE
-
-  To change null substitution values, an application can call the
-  CS-Library routine =cs_setnull=.
-  #+END_QUOTE
-
-  postgre has a =PQgetisnull=, by the way; and the egg returns
-  =(sql-null)=.
 * DONE text, image
   CLOSED: [2010-11-22 Mon 16:25]
   - CLOSING NOTE [2010-11-22 Mon 16:26] \\

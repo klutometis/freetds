@@ -18,7 +18,8 @@
       foof-loop
       numbers
       miscmacros
-      debug)
+      debug
+      sql-null)
 
  (define alist-sentinel (cons #f #f))
 
@@ -110,7 +111,7 @@
                              (,%set-finalizer!
                               type*
                               (,%lambda (type*)
-                                #;(,%free type*)
+                                ;; (,%free type*)
                                 ((,%foreign-primitive
                                   void
                                   (((c-pointer ,(symbol->string type)) type))
@@ -287,14 +288,17 @@
          daterec*))
       'cs_dt_crack
       "failed to crack date")
-     (make-date (* (daterec-msecond daterec*) 1000000)
-                (daterec-second daterec*)
-                (daterec-minute daterec*)
-                (daterec-hour daterec*)
-                (daterec-dmonth daterec*)
-                (add1 (daterec-month daterec*))
-                (daterec-year daterec*)
-                (daterec-timezone daterec*))))
+     ;; HACK: assuming that unparsable dates are NULL.
+     (condition-case
+      (make-date (* (daterec-msecond daterec*) 1000000)
+                 (daterec-second daterec*)
+                 (daterec-minute daterec*)
+                 (daterec-hour daterec*)
+                 (daterec-dmonth daterec*)
+                 (add1 (daterec-month daterec*))
+                 (daterec-year daterec*)
+                 (daterec-timezone daterec*))
+      ((exn) (sql-null)))))
 
  (define-syntax CS_INT*->number
    (er-macro-transformer
@@ -325,7 +329,7 @@
    (CS_BINARY*->vector binary* length))
  (define translate-CS_LONGBINARY* translate-CS_BINARY*)
  (define (translate-CS_VARBINARY* context* varbinary* length)
-   #;(debug length (varbinary-length varbinary*))
+   ;; (debug length (varbinary-length varbinary*))
    ;; can't seems to retrieve a pointer to the beginning of the array
    ;; with object->pointer; resorting, therefore, to
    ;; foreign-safe-lambda*.
@@ -624,13 +628,25 @@
     'ct_connect
     "failed to connect to server"))
 
- (define (make-connection context* host username password)
-   (let-location ((connection* (c-pointer "CS_CONNECTION")))
-     (allocate-connection! context* (location connection*))
-     (connection-property-set-username! connection* username)
-     (connection-property-set-password! connection* password)
-     (connect! connection* (location host) (string-length host))
-     connection*))
+ (define (use! context* connection* database)
+   (call-with-result-set
+    connection*
+    ;; needs to be escaped!
+    (format "USE ~a" database)
+    (cut result-values context* connection* <>)))
+
+ (define make-connection
+   (case-lambda
+    ((context* host username password)
+     (make-connection context* host username password #f))
+    ((context* host username password database)
+     (let-location ((connection* (c-pointer "CS_CONNECTION")))
+       (allocate-connection! context* (location connection*))
+       (connection-property-set-username! connection* username)
+       (connection-property-set-password! connection* password)
+       (connect! connection* (location host) (string-length host))
+       (if database (use! context* connection* database))
+       connection*))))
 
  (define (allocate-command! connection* command**)
    (error-on-non-success
@@ -873,7 +889,9 @@
                           (foreign-value "CS_VARCHAR_TYPE" CS_INT)
                           (foreign-value "CS_BINARY_TYPE" CS_INT)
                           (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
-                          (foreign-value "CS_VARBINARY_TYPE" CS_INT))
+                          (foreign-value "CS_VARBINARY_TYPE" CS_INT)
+                          (foreign-value "CS_DATETIME_TYPE" CS_INT)
+                          (foreign-value "CS_DATETIME4_TYPE" CS_INT))
                          (data-format-format-set!
                           data-format*
                           (foreign-value "CS_FMT_PADNULL" CS_INT))))
@@ -980,16 +998,16 @@
 
  ;; this version won't even let me use the ((lambda () (format ...)))
  ;; trick for procedural strings.
- #;(define (call-with-result-set connection* query process-command)
-   (let ((command* #f))
-     (dynamic-wind
-         (lambda () (set! command* (make-command connection* query)))
-         (lambda () (process-command command*))
-         (lambda ()
-           ;; Only cancel the command here, so that the connection is
-           ;; reusable.
-           (cancel! (null-pointer) command*)
-           (command-drop! command*)))))
+ ;; (define (call-with-result-set connection* query process-command)
+ ;;   (let ((command* #f))
+ ;;     (dynamic-wind
+ ;;         (lambda () (set! command* (make-command connection* query)))
+ ;;         (lambda () (process-command command*))
+ ;;         (lambda ()
+ ;;           ;; Only cancel the command here, so that the connection is
+ ;;           ;; reusable.
+ ;;           (cancel! (null-pointer) command*)
+ ;;           (command-drop! command*))))
 
   (define (call-with-result-set connection* query process-command)
    (let ((command* (make-command connection* query)))
@@ -1011,17 +1029,23 @@
            (context-exit! context*)
            (context-drop! context*)))))
 
- (define (call-with-connection context*
-                               server
-                               username
-                               password
-                               process-connection)
-   (let ((connection* (make-connection context*
-                                       server
-                                       username
-                                       password)))
-     (dynamic-wind
-         noop
-         (lambda () (process-connection connection*))
-         (lambda ()
-           (connection-close! connection*))))))
+ (define call-with-connection
+   (case-lambda
+    ((context* server username password process-connection)
+     (call-with-connection context*
+                           server
+                           username
+                           password
+                           #f
+                           process-connection))
+    ((context* server username password database process-connection)
+     (let ((connection* (make-connection context*
+                                         server
+                                         username
+                                         password
+                                         database)))
+       (dynamic-wind
+           noop
+           (lambda () (process-connection connection*))
+           (lambda ()
+             (connection-close! connection*))))))))
