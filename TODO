@@ -43,35 +43,7 @@
 
   this is top priority now, unfortunately, especially with dates;
   which throw an error when NULL.
-* TODO select database when connecting
-  #+BEGIN_SRC scheme :tangle test-use.scm :shebang #!/usr/bin/env chicken-scheme
-    (use freetds debug)
-    (include "test-freetds-secret.scm")
-    (call-with-context
-     (lambda (context)
-       (call-with-connection
-        context
-        server
-        username
-        password
-        database
-        (lambda (connection)
-          (call-with-result-set
-           connection
-           "SELECT TOP 256 PhysicianId from ttAccession"
-           (lambda (command)
-             (debug (result-values context connection command))))))))
-    
-  #+END_SRC
 * TODO fix the fucking memory problems (unusable?)
-* CANCELED get rid of the implicit table crap in =define-make-type*/type-size=
-# <<implicit-table-crap>>
-  CLOSED: [2010-12-16 Thu 18:27]
-  - CLOSING NOTE [2010-12-16 Thu 18:28] \\
-    we did worse, and replaced it with three implicit tables:
-    =datatype->make-type*=, =datatype->type-size=,
-    =datatype->translate-type*=.
-  think along the lines of make-type-table, etc.
 * TODO =make-{context, connection, etc.}= -> ={context, connect}=
 * TODO abstract away =context*=?
   no, let's provide it initially; "power users" may yet want to
@@ -92,204 +64,7 @@
   it seems like we can use =let-location= when an allocation function
   is provided by the library; otherwise, use the =make-type*= hack.
 * TODO alist-lib
-* DONE =define-make-type*/type-size/update-type-table!=
-  CLOSED: [2010-12-16 Thu 18:28]
-  - CLOSING NOTE [2010-12-16 Thu 18:28] \\
-    see [[implicit-table-crap]].
-  can probably get away with =define-make-type*/type-size=, but what
-  about explicit tables for =type->make-type*=, =type->type-size=,
-  =type->parse-type=, =type->unparse-type=?
 * TODO =translate-type*= -> ={un,}parse-type*=
-* TODO module
-** TODO api
-   connect; close; query -> result; result-{map,fold,for-each}.
-
-   when processing results, by the way, some kind of cancellation or
-   deallocation should take place in the case of errors, shouldn't it?
-
-   #+BEGIN_SRC org
-     ,- connect host username password -> connection
-     ,  - allocates context and connection, returning them in a connection
-     ,    struct.
-     ,  - what about database?
-     ,- connection
-     ,  - context*
-     ,  - connection*
-     ,- close connection -> void
-     ,  - does all the context/connection deallocation.
-     ,- query statement . parameters -> result
-     ,  - allocates command.
-     ,  - gets as far as =send!=; some sort of result iterator has to handle
-     ,    binding and end-of-results, etc.
-     ,  - result structure contains a =CS_COMMAND= pointer.
-     ,- result (command*)
-     ,- result-map result -> list or #!eor
-     ,- result-for-each result -> (void) or #!eor
-     ,- result-fold result -> value or #!eor
-     ,- with-result-set query (lambda (result) ...) -> value
-     ,- fetch-row result -> list or #!eof
-   #+END_SRC
-
-   the =result-{map, ...}= commands have to call =results!= first and
-   test for =CS_END_RESULTS= (returning =#!eor=); or, in the case of
-   =CS_SUCCEED=, should =bind!= and iteratively =row-fetch= until,
-   say, =#!eod= (end of data).
-
-   let's start with, say, =result-values=? it can be abstracted as a
-   case of =result-map=, but let's start simple.
-
-   #+BEGIN_SRC org
-     ,- result-values command* -> ((v00 v01 ... v0m) (v10 v11 ... v1m)
-     ,  ... (vn0 vn1 ... vnm))
-     ,  - let bound-variables (make-bound-variables command*)
-     ,    - if eor-object? bound-variables
-     ,      - #!eor
-     ,      - unfold
-     ,        - end-of-data?
-     ,        - cute row-fetch <> bound-variables
-     ,        - values
-     ,        - command*
-     ,- make-bound-variables command* -> ((variable0 length0 translate0) ...)
-     ,  - let result-status results! command* ...
-     ,    - select result-status
-     ,      - CS_SUCCEED
-     ,        - results-info! ...
-     ,      - CS_END_RESULTS
-     ,        - command-drop! command*
-     ,        - #!eor
-     ,      - CS_FAIL
-     ,        - (ct_cancel CS_CANCEL_ALL)
-     ,          - if CS_FAIL, (cs_close CS_FORCE_CLOSE)
-     ,      - else
-     ,        - error (should we =command-drop!=?)
-     ,- row-fetch command* bound-variables
-     ,  - let-location rows-read ...
-     ,    - let retcode = fetch! command* ...
-     ,      - select retcode
-     ,        - CS_SUCCEED CS_ROW_FAIL
-     ,          - map lambda bound-variable ...
-     ,        - CS_END_DATA
-     ,          - # should we return nil here? depends if there are valid
-     ,            sql statements that return the empty set: update, delete
-     ,            perhaps?
-     ,          - #!eod
-     ,        - CS_FAIL
-     ,          - (ct_cancel CS_CANCEL_ALL)
-     ,            - if CS_FAIL, (cs_close CS_FORCE_CLOSE)
-     ,          - error
-     ,        - else
-     ,          - error (should we =command-drop!=?)
-   #+END_SRC
-
-   fundamental iterator from which map, fold, filter can be built: is
-   it perhaps fold itself?
-
-   #+BEGIN_EXAMPLE
-   17:51 < klutometis> i'm looking for a fundamental iterator with which
-   to implement map, for-each, fold, filter, unfold; would fold itself be
-   a reasonable candidate?
-   17:52 < Riastradh> No, but lambda would be.
-   17:53 < cky> Riastradh++
-   17:53 < klutometis> Riastradh: heh; i think that should become a koan.
-   17:53 < cky> klutometis: I've once tried implementing fold in terms of
-   unfold, and vice versa. It's actually...very challenging (to me).
-   17:53 < Riastradh> Maybe foof-loop too.   
-   #+END_EXAMPLE
-*** TODO result sets
-    every command can be associated with multiple buffers:
-
-    #+BEGIN_QUOTE
-    Result data is returned to an application in the form of a “result
-    set”. A result set includes only a single type of result data. For
-    example, a regular row result set contains only regular rows, and
-    a return parameter result set contains only return parameters.
-    #+END_QUOTE
-
-    should we ignore result sets, either return the first or last
-    during a map, etc.; require users to worry about them by
-    explicitly iterating through them; or merely support one statement
-    per query?
-
-    last might be nice; i'd hate to have to think about result
-    sets. some people, on the other hand, find them useful? this is,
-    unfortunately, a fundamental design decision.
-
-    or could it be, for instance, that result-fold, etc. inaugurate
-    the result-set iteration themselves; relying on the user to call
-    them n times? yes.
-
-    this will have to be dealt with, however, before any new commands
-    can be sent over the connection:
-
-    #+BEGIN_QUOTE
-    A connection has pending results if it has not processed all of
-    the results generated by a Client-Library command. Usually, an
-    application cannot send a new command on a connection with pending
-    results.
-    #+END_QUOTE
-
-    as far as cancelling goes:
-
-    #+BEGIN_QUOTE
-    - To cancel all remaining results from a command (and eliminate
-      the need to continue calling =ct_results= until it fails to
-      return =CS_SUCCEED=), call ct_cancel with type as
-      =CS_CANCEL_ALL=.
-    - To cancel only the current results, call ct_cancel with type as
-      =CS_CANCEL_CURRENT=.
-    #+END_QUOTE
-
-    might need a =result-cancel=, therefore, unless we have
-    e.g. =with-result-set=. =with-result-set= sounds reasonable,
-    doesn't it?
-
-    #+BEGIN_SRC scheme
-      #!/usr/bin/env chicken-scheme
-      (use test)
-      
-      ;;; Taking a suggestion from chandler on #scheme: "You can rely on
-      ;;; (cons #f #f) to evaluate to an object which is not `eq?' to any
-      ;;; other existing object."
-      (define eor-object (cons #f #f))
-      
-      (define (eor-object? object) (eq? object eor-object))
-      
-      (set-read-syntax! 'eor (lambda (port) 'eor-object))
-      
-      (test-assert (eor-object? #!eor))
-    #+END_SRC
-
-    on =CS_END_RESULTS=, let's give an =#!eor=; otherwise, return the
-    results or error.
-** TODO {un,}parsing
-   see the [[http://wiki.call-cc.org/eggref/4/postgresql#type-conversion][postgresql stuff]] on {un,}parsers; not only can you set the
-   =default-type-{un,}parsers= parameters, you can pass an
-   {un,}parse-table to =connect=.
-
-   also, postgre has predicates associated with the types; would that
-   allow us to do more sophisticated things, like distinguish between
-   bigints and numerics? no. what about custom types? perhaps. wow, it
-   does allow composite parsers by predicate-composition. it also does
-   a-priori conversion of c-types to blobs, apparently.
-
-   the postgre connection object apparently contains the
-   {un,}parse-tables; allowing modification after connection.
-
-   in =query*=, by the way, there's a lot of =memcpy=, =C_malloc= and
-   =free=; interesting:
-
-   #+BEGIN_SRC scheme
-     ;; This must copy because libpq returns a malloced ptr...
-   #+END_SRC
-
-   I was going to suggest that unparsers may be superfluous, since
-   =ct_dynamic= takes a =CS_CHAR *= buffer; but it appears as though
-   =ct_param= passes the input value to the statement, which indeed
-   takes an =CS_DATAFMT *= and a =CS_VOID *= as the data.
-
-   On the other hand, though, if =CS_DATAFMT *= specifies
-   =CS_CHAR_TYPE=, maybe we can get away with string representations;
-   we still need unparsers, though, for srfi-14 dates, currency, etc.
 * TODO custom types
 * TODO timestamp type
   from [[http://msdn.microsoft.com/en-us/library/aa260631(v=SQL.80).aspx][here]]:
@@ -394,6 +169,228 @@
   an extra query every time? is it the case that you have no idea how
   many 0s are significant? i think so. or is it the case that 256
   corresponds to only 4 bytes?
+* DONE select database when connecting
+  CLOSED: [2011-02-15 Tue 17:03]
+  #+BEGIN_SRC scheme :tangle test-use.scm :shebang #!/usr/bin/env chicken-scheme
+    (use freetds debug)
+    (include "test-freetds-secret.scm")
+    (call-with-context
+     (lambda (context)
+       (call-with-connection
+        context
+        server
+        username
+        password
+        database
+        (lambda (connection)
+          (call-with-result-set
+           connection
+           "SELECT TOP 256 PhysicianId from ttAccession"
+           (lambda (command)
+             (debug (result-values context connection command))))))))
+    
+  #+END_SRC
+* DONE =define-make-type*/type-size/update-type-table!=
+  CLOSED: [2010-12-16 Thu 18:28]
+  - CLOSING NOTE [2010-12-16 Thu 18:28] \\
+    see [[implicit-table-crap]].
+  can probably get away with =define-make-type*/type-size=, but what
+  about explicit tables for =type->make-type*=, =type->type-size=,
+  =type->parse-type=, =type->unparse-type=?
+* DONE module
+  CLOSED: [2011-02-15 Tue 17:05]
+** DONE api
+   CLOSED: [2011-02-15 Tue 17:05]
+   connect; close; query -> result; result-{map,fold,for-each}.
+
+   when processing results, by the way, some kind of cancellation or
+   deallocation should take place in the case of errors, shouldn't it?
+
+   #+BEGIN_SRC org
+     ,- connect host username password -> connection
+     ,  - allocates context and connection, returning them in a connection
+     ,    struct.
+     ,  - what about database?
+     ,- connection
+     ,  - context*
+     ,  - connection*
+     ,- close connection -> void
+     ,  - does all the context/connection deallocation.
+     ,- query statement . parameters -> result
+     ,  - allocates command.
+     ,  - gets as far as =send!=; some sort of result iterator has to handle
+     ,    binding and end-of-results, etc.
+     ,  - result structure contains a =CS_COMMAND= pointer.
+     ,- result (command*)
+     ,- result-map result -> list or #!eor
+     ,- result-for-each result -> (void) or #!eor
+     ,- result-fold result -> value or #!eor
+     ,- with-result-set query (lambda (result) ...) -> value
+     ,- fetch-row result -> list or #!eof
+   #+END_SRC
+
+   the =result-{map, ...}= commands have to call =results!= first and
+   test for =CS_END_RESULTS= (returning =#!eor=); or, in the case of
+   =CS_SUCCEED=, should =bind!= and iteratively =row-fetch= until,
+   say, =#!eod= (end of data).
+
+   let's start with, say, =result-values=? it can be abstracted as a
+   case of =result-map=, but let's start simple.
+
+   #+BEGIN_SRC org
+     ,- result-values command* -> ((v00 v01 ... v0m) (v10 v11 ... v1m)
+     ,  ... (vn0 vn1 ... vnm))
+     ,  - let bound-variables (make-bound-variables command*)
+     ,    - if eor-object? bound-variables
+     ,      - #!eor
+     ,      - unfold
+     ,        - end-of-data?
+     ,        - cute row-fetch <> bound-variables
+     ,        - values
+     ,        - command*
+     ,- make-bound-variables command* -> ((variable0 length0 translate0) ...)
+     ,  - let result-status results! command* ...
+     ,    - select result-status
+     ,      - CS_SUCCEED
+     ,        - results-info! ...
+     ,      - CS_END_RESULTS
+     ,        - command-drop! command*
+     ,        - #!eor
+     ,      - CS_FAIL
+     ,        - (ct_cancel CS_CANCEL_ALL)
+     ,          - if CS_FAIL, (cs_close CS_FORCE_CLOSE)
+     ,      - else
+     ,        - error (should we =command-drop!=?)
+     ,- row-fetch command* bound-variables
+     ,  - let-location rows-read ...
+     ,    - let retcode = fetch! command* ...
+     ,      - select retcode
+     ,        - CS_SUCCEED CS_ROW_FAIL
+     ,          - map lambda bound-variable ...
+     ,        - CS_END_DATA
+     ,          - # should we return nil here? depends if there are valid
+     ,            sql statements that return the empty set: update, delete
+     ,            perhaps?
+     ,          - #!eod
+     ,        - CS_FAIL
+     ,          - (ct_cancel CS_CANCEL_ALL)
+     ,            - if CS_FAIL, (cs_close CS_FORCE_CLOSE)
+     ,          - error
+     ,        - else
+     ,          - error (should we =command-drop!=?)
+   #+END_SRC
+
+   fundamental iterator from which map, fold, filter can be built: is
+   it perhaps fold itself?
+
+   #+BEGIN_EXAMPLE
+   17:51 < klutometis> i'm looking for a fundamental iterator with which
+   to implement map, for-each, fold, filter, unfold; would fold itself be
+   a reasonable candidate?
+   17:52 < Riastradh> No, but lambda would be.
+   17:53 < cky> Riastradh++
+   17:53 < klutometis> Riastradh: heh; i think that should become a koan.
+   17:53 < cky> klutometis: I've once tried implementing fold in terms of
+   unfold, and vice versa. It's actually...very challenging (to me).
+   17:53 < Riastradh> Maybe foof-loop too.   
+   #+END_EXAMPLE
+*** CANCELED result sets
+    CLOSED: [2011-02-15 Tue 17:05]
+    every command can be associated with multiple buffers:
+
+    #+BEGIN_QUOTE
+    Result data is returned to an application in the form of a “result
+    set”. A result set includes only a single type of result data. For
+    example, a regular row result set contains only regular rows, and
+    a return parameter result set contains only return parameters.
+    #+END_QUOTE
+
+    should we ignore result sets, either return the first or last
+    during a map, etc.; require users to worry about them by
+    explicitly iterating through them; or merely support one statement
+    per query?
+
+    last might be nice; i'd hate to have to think about result
+    sets. some people, on the other hand, find them useful? this is,
+    unfortunately, a fundamental design decision.
+
+    or could it be, for instance, that result-fold, etc. inaugurate
+    the result-set iteration themselves; relying on the user to call
+    them n times? yes.
+
+    this will have to be dealt with, however, before any new commands
+    can be sent over the connection:
+
+    #+BEGIN_QUOTE
+    A connection has pending results if it has not processed all of
+    the results generated by a Client-Library command. Usually, an
+    application cannot send a new command on a connection with pending
+    results.
+    #+END_QUOTE
+
+    as far as cancelling goes:
+
+    #+BEGIN_QUOTE
+    - To cancel all remaining results from a command (and eliminate
+      the need to continue calling =ct_results= until it fails to
+      return =CS_SUCCEED=), call ct_cancel with type as
+      =CS_CANCEL_ALL=.
+    - To cancel only the current results, call ct_cancel with type as
+      =CS_CANCEL_CURRENT=.
+    #+END_QUOTE
+
+    might need a =result-cancel=, therefore, unless we have
+    e.g. =with-result-set=. =with-result-set= sounds reasonable,
+    doesn't it?
+
+    #+BEGIN_SRC scheme
+      #!/usr/bin/env chicken-scheme
+      (use test)
+      
+      ;;; Taking a suggestion from chandler on #scheme: "You can rely on
+      ;;; (cons #f #f) to evaluate to an object which is not `eq?' to any
+      ;;; other existing object."
+      (define eor-object (cons #f #f))
+      
+      (define (eor-object? object) (eq? object eor-object))
+      
+      (set-read-syntax! 'eor (lambda (port) 'eor-object))
+      
+      (test-assert (eor-object? #!eor))
+    #+END_SRC
+
+    on =CS_END_RESULTS=, let's give an =#!eor=; otherwise, return the
+    results or error.
+** CANCELED {un,}parsing
+   CLOSED: [2011-02-15 Tue 17:05]
+   see the [[http://wiki.call-cc.org/eggref/4/postgresql#type-conversion][postgresql stuff]] on {un,}parsers; not only can you set the
+   =default-type-{un,}parsers= parameters, you can pass an
+   {un,}parse-table to =connect=.
+
+   also, postgre has predicates associated with the types; would that
+   allow us to do more sophisticated things, like distinguish between
+   bigints and numerics? no. what about custom types? perhaps. wow, it
+   does allow composite parsers by predicate-composition. it also does
+   a-priori conversion of c-types to blobs, apparently.
+
+   the postgre connection object apparently contains the
+   {un,}parse-tables; allowing modification after connection.
+
+   in =query*=, by the way, there's a lot of =memcpy=, =C_malloc= and
+   =free=; interesting:
+
+   #+BEGIN_SRC scheme
+     ;; This must copy because libpq returns a malloced ptr...
+   #+END_SRC
+
+   I was going to suggest that unparsers may be superfluous, since
+   =ct_dynamic= takes a =CS_CHAR *= buffer; but it appears as though
+   =ct_param= passes the input value to the statement, which indeed
+   takes an =CS_DATAFMT *= and a =CS_VOID *= as the data.
+
+   On the other hand, though, if =CS_DATAFMT *= specifies
+   =CS_CHAR_TYPE=, maybe we can get away with string representations;
+   we still need unparsers, though, for srfi-14 dates, currency, etc.
 * DONE text, image
   CLOSED: [2010-11-22 Mon 16:25]
   - CLOSING NOTE [2010-11-22 Mon 16:26] \\
@@ -899,6 +896,14 @@
   include at least two calls to CS-Library, because they must allocate
   and drop a context structure. (ctlib guide, p. 18)
   #+END_QUOTE
+* CANCELED get rid of the implicit table crap in =define-make-type*/type-size=
+# <<implicit-table-crap>>
+  CLOSED: [2010-12-16 Thu 18:27]
+  - CLOSING NOTE [2010-12-16 Thu 18:28] \\
+    we did worse, and replaced it with three implicit tables:
+    =datatype->make-type*=, =datatype->type-size=,
+    =datatype->translate-type*=.
+  think along the lines of make-type-table, etc.
 * CANCELED per-type dataformat-configurers
   CLOSED: [2010-11-18 Thu 18:12]
 * CANCELED =ct_data_info=
