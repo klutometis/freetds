@@ -1,4 +1,12 @@
 # -*- mode: org; -*-
+* TODO reimplement in [[http://chicken.wiki.br/easyffi][easyffi]]?
+  might get rid of the segfaults; or do we still have the problem of
+  memory management? (I suspect we do; but maybe easyffi handles
+  conversion.)
+
+  [[http://wiki.call-cc.org/eggref/4/bind][bind]] is the new version, apparently; also check out the
+  [[http://wiki.call-cc.org/eggref/4/bind#general-operation][bind-<struct-name>]] stuff. Does some malloc, etc. Not to mention
+  [[http://wiki.call-cc.org/eggref/4/bind#bind-opaque-type][bind-opaque-type]], etc.
 * TODO [#A] determining whether data is NULL
   should we zero the memory first? maybe it doesn't touch it. never
   mind; see guide, p. 55:
