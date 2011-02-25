@@ -1,4 +1,12 @@
 # -*- mode: org; -*-
+* TODO fix the fucking memory problems (unusable?)
+  this thing is unusable for anything useful; each =let-location= is
+  possibly suspect. convert them to =malloc/frees=.
+
+  until then, this whole expirement was a failure; we'll go back to
+  using python wrappers and throw away six (eight?) weeks of work.
+
+  maybe we really should try =bind=.
 * TODO [#A] determining whether data is NULL
   should we zero the memory first? maybe it doesn't touch it. never
   mind; see guide, p. 55:
@@ -43,7 +51,6 @@
 
   this is top priority now, unfortunately, especially with dates;
   which throw an error when NULL.
-* TODO fix the fucking memory problems (unusable?)
 * TODO =make-{context, connection, etc.}= -> ={context, connect}=
 * TODO abstract away =context*=?
   no, let's provide it initially; "power users" may yet want to

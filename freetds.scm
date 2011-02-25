@@ -493,6 +493,9 @@
  (define (row-result? retcode)
    (= retcode (foreign-value "CS_ROW_RESULT" CS_INT)))
 
+ (define (row-format-result? retcode)
+   (= retcode (foreign-value "CS_ROWFMT_RESULT" CS_INT)))
+
  (define (row-fail? retcode)
    (= retcode (foreign-value "CS_ROW_FAIL" CS_INT)))
 
@@ -868,7 +871,8 @@
           (match result-type
             ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
             ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
-            ((? row-result?)
+            ((or (? row-result?)
+                 (? row-format-result?))
              (let-location ((column-count CS_INT))
                (results-info-column-count! command* (location column-count))
                (list-tabulate
@@ -894,7 +898,7 @@
                           (foreign-value "CS_DATETIME4_TYPE" CS_INT))
                          (data-format-format-set!
                           data-format*
-                          (foreign-value "CS_FMT_PADNULL" CS_INT))))
+                          (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
                       (let ((make-type*
                              (alist-ref/default
                               datatype
@@ -1009,7 +1013,7 @@
  ;;           (cancel! (null-pointer) command*)
  ;;           (command-drop! command*))))
 
-  (define (call-with-result-set connection* query process-command)
+ (define (call-with-result-set connection* query process-command)
    (let ((command* (make-command connection* query)))
      (dynamic-wind
          noop
