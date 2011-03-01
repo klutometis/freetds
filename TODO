@@ -7,6 +7,10 @@
   using python wrappers and throw away six (eight?) weeks of work.
 
   maybe we really should try =bind=.
+
+  or is it maybe that i'm misunderstanding the freetds stuff itself
+  and the use of e.g. =cancel= across =send= vs. =connect=
+  vs. =context=?
 * TODO reimplement in [[http://chicken.wiki.br/easyffi][easyffi]]?
   might get rid of the segfaults; or do we still have the problem of
   memory management? (I suspect we do; but maybe easyffi handles
