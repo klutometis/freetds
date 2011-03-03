@@ -515,17 +515,23 @@
      (if (not (success? retcode))
          (apply freetds-error location message retcode arguments))))
 
- (define (allocate-context! version context**)
-   (error-on-non-success
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "cs_ctx_alloc"
-                       CS_INT
-                       (c-pointer (c-pointer "CS_CONTEXT")))
-       version
-       context**))
-    'cs_ctx_alloc
-    "failed to allocate context"))
+(define-syntax with-retcode-check
+  (syntax-rules ()
+    ((_ retcode (loc message arguments ...) forms ...)
+     (let-location ((retcode CS_INT))
+       (let ((result (begin forms ...)))
+         (if (not (success? retcode))
+             (freetds-error 'loc message retcode arguments ...)
+             result))))))
+
+ (define (allocate-context! version)
+   (with-retcode-check retcode (cs_ctx_alloc "failed to allocate context")
+     ((foreign-lambda* (c-pointer "CS_CONTEXT") ((CS_INT version)
+                                                 ((c-pointer int) res))
+                       "CS_CONTEXT *p;"
+                       "*res = cs_ctx_alloc(version, &p);"
+                       "C_return(p);")
+      version (location retcode))))
 
  (define (initialize-context! context* version)
    (error-on-non-success
@@ -545,22 +551,18 @@
      (let ((version (foreign-value "CS_VERSION_100" CS_INT)))
        (make-context version)))
     ((version)
-     (let-location ((context* (c-pointer "CS_CONTEXT")))
-       (allocate-context! version (location context*))
+     (let ((context* (allocate-context! version)))
        (initialize-context! context* version)
        context*))))
 
- (define (allocate-connection! context* connection**)
-   (error-on-non-success
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_con_alloc"
-                       (c-pointer "CS_CONTEXT")
-                       (c-pointer (c-pointer "CS_CONNECTION")))
-       context*
-       connection**))
-    'ct_con_alloc
-    "failed to allocate a connection"))
+ (define (allocate-connection! context*)
+   (with-retcode-check retcode (ct_con_alloc "failed to allocate a connection")
+     ((foreign-lambda* (c-pointer "CS_CONNECTION") (((c-pointer "CS_CONTEXT") ctx)
+                                                    ((c-pointer int) res))
+                       "CS_CONNECTION *con;"
+                       "*res = ct_con_alloc(ctx, &con);"
+                       "C_return(con);")
+      context* (location retcode))))
 
  (define (connection-property connection*
                               action
@@ -639,25 +641,21 @@
     ((context* host username password)
      (make-connection context* host username password #f))
     ((context* host username password database)
-     (let-location ((connection* (c-pointer "CS_CONNECTION")))
-       (allocate-connection! context* (location connection*))
+     (let ((connection* (allocate-connection! context*)))
        (connection-property-set-username! connection* username)
        (connection-property-set-password! connection* password)
        (connect! connection* (location host) (string-length host))
        (if database (use! context* connection* database))
        connection*))))
 
- (define (allocate-command! connection* command**)
-   (error-on-non-success
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_cmd_alloc"
-                       (c-pointer "CS_CONNECTION")
-                       (c-pointer (c-pointer "CS_COMMAND")))
-       connection*
-       command**))
-    'ct_cmd_alloc
-    "failed to allocate command"))
+ (define (allocate-command! connection*)
+   (with-retcode-check retcode (ct_cmd_alloc "failed to allocate command")
+     ((foreign-lambda* (c-pointer "CS_COMMAND") (((c-pointer "CS_CONNECTION") ctx)
+                                                 ((c-pointer int) res))
+                       "CS_COMMAND *cmd;"
+                       "*res = ct_cmd_alloc(ctx, &cmd);"
+                       "C_return(cmd);")
+      connection* (location retcode))))
 
  (define (command! command* type buffer* buffer-length option)
    (error-on-non-success
@@ -689,8 +687,7 @@
     "failed to send command"))
 
  (define (make-command connection* query . parameters)
-   (let-location ((command* (c-pointer "CS_COMMAND")))
-     (allocate-command! connection* (location command*))
+   (let ((command* (allocate-command! connection*)))
      (command! command*
                (foreign-value "CS_LANG_CMD" CS_INT)
                query
