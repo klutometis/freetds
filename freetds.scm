@@ -14,11 +14,7 @@
       srfi-19
       foreigners
       data-structures
-      expand-full
       foof-loop
-      numbers
-      miscmacros
-      debug
       sql-null)
 
  (define alist-sentinel (cons #f #f))

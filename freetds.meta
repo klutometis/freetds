@@ -1,8 +1,7 @@
 ((egg "unicode-greek.egg")
  (license "MIT")
  (category databases)
- (needs setup-helper
-        autocompile)
+ (needs setup-helper autocompile srfi-19 foreigners foof-loop)
  (test-depends test)
  (author "Peter Danenberg")
  (synopsis "Bindings for FreeTDS")
