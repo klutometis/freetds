@@ -810,19 +810,16 @@
     'cs_ctx_drop
     "failed to drop context"))
 
- (define (fetch! command* type offset option rows-read*)
-   ((foreign-lambda CS_RETCODE
-                    "ct_fetch"
-                    (c-pointer "CS_COMMAND")
-                    CS_INT
-                    CS_INT
-                    CS_INT
-                    (c-pointer CS_INT))
-    command*
-    type
-    offset
-    option
-    rows-read*))
+ (define (fetch! command*)
+   (let-location ((retcode CS_INT))
+     (let* ((fetch* (foreign-lambda* CS_INT (((c-pointer "CS_COMMAND") cmd)
+                                             ((c-pointer int) res))
+                                     "int rows_read;"
+                                     "*res = ct_fetch(cmd, CS_UNUSED, CS_UNUSED,"
+                                     "                CS_UNUSED, &rows_read);"
+                                     "C_return(rows_read);"))
+            (rows-read (fetch* command* (location retcode))))
+       (values rows-read retcode))))
 
  (define cancel!
    (case-lambda
@@ -954,34 +951,29 @@
                          result-status))))))
 
  (define (row-fetch context* command* bound-variables)
-   (let-location ((rows-read int))
-     (let ((retcode (fetch! command*
-                            (foreign-value "CS_UNUSED" CS_INT)
-                            (foreign-value "CS_UNUSED" CS_INT)
-                            (foreign-value "CS_UNUSED" CS_INT)
-                            (location rows-read))))
-       (match retcode
-         ((? success? row-fail?)
-          (map (lambda (bound-variable)
-                 (match-let (((value translate-type* . length)
-                              bound-variable))
-                   (translate-type* context*
-                                    value
-                                    length)))
-               bound-variables))
-         ((? fail?)
-          ;; cancel
-          ;; fail again -> close
-          (command-drop! command*)
-          (freetds-error 'row-fetch
-                         "fetch! returned CS_FAIL"
-                         retcode))
-         ((? end-data?)
-          eod-object)
-         (_
-          (freetds-error 'row-fetch
-                         "fetch! returned unknown retcode"
-                         retcode))))))
+   (let-values (((rows-read retcode) (fetch! command*)))
+     (match retcode
+       ((? success? row-fail?)
+        (map (lambda (bound-variable)
+               (match-let (((value translate-type* . length)
+                            bound-variable))
+                          (translate-type* context*
+                                           value
+                                           length)))
+             bound-variables))
+       ((? fail?)
+        ;; cancel
+        ;; fail again -> close
+        (command-drop! command*)
+        (freetds-error 'row-fetch
+                       "fetch! returned CS_FAIL"
+                       retcode))
+       ((? end-data?)
+        eod-object)
+       (_
+        (freetds-error 'row-fetch
+                       "fetch! returned unknown retcode"
+                       retcode)))))
 
  (define (result-values context* connection* command*)
    (let ((bound-variables (make-bound-variables connection* command*)))
