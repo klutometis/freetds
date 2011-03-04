@@ -1009,7 +1009,7 @@
  (define (call-with-result-set connection* query process-command)
    (let ((command* (make-command connection* query)))
      (dynamic-wind
-         noop
+         void
          (lambda () (process-command command*))
          (lambda ()
            ;; Only cancel the command here, so that the connection is
@@ -1020,7 +1020,7 @@
  (define (call-with-context process-context)
    (let ((context* (make-context)))
      (dynamic-wind
-         noop
+         void
          (lambda () (process-context context*))
          (lambda ()
            (context-exit! context*)
@@ -1042,7 +1042,7 @@
                                          password
                                          database)))
        (dynamic-wind
-           noop
+           void
            (lambda () (process-connection connection*))
            (lambda ()
              (connection-close! connection*))))))))
