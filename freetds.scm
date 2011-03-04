@@ -567,7 +567,7 @@
  (define (connection-property connection*
                               action
                               property
-                              buffer*
+                              buffer
                               buffer-length
                               out-length*)
    (error-on-non-success
@@ -577,13 +577,13 @@
                        (c-pointer "CS_CONNECTION")
                        CS_INT
                        CS_INT
-                       (c-pointer "CS_VOID")
+                       scheme-pointer
                        CS_INT
                        (c-pointer "CS_INT"))
        connection*
        action
        property
-       buffer*
+       buffer
        buffer-length
        out-length*))
     'ct_con_props
@@ -591,40 +591,40 @@
 
  (define (connection-property-set! connection*
                                    property
-                                   buffer*
+                                   buffer
                                    buffer-length
                                    out-length*)
    (connection-property connection*
                         (foreign-value "CS_SET" CS_INT)
                         property
-                        buffer*
+                        buffer
                         buffer-length
                         out-length*))
 
  (define (connection-property-set-username! connection* username)
    (connection-property-set! connection*
                              (foreign-value "CS_USERNAME" CS_INT)
-                             (location username)
+                             username
                              (foreign-value "CS_NULLTERM" CS_INT)
                              (null-pointer)))
 
  (define (connection-property-set-password! connection* password)
    (connection-property-set! connection*
                              (foreign-value "CS_PASSWORD" CS_INT)
-                             (location password)
+                             password
                              (foreign-value "CS_NULLTERM" CS_INT)
                              (null-pointer)))
 
- (define (connect! connection* server* server-length)
+ (define (connect! connection* server server-length)
    (error-on-non-success
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_connect"
                        (c-pointer "CS_CONNECTION")
-                       (c-pointer "CS_CHAR")
+                       c-string
                        CS_INT)
        connection*
-       server*
+       server
        server-length))
     'ct_connect
     "failed to connect to server"))
@@ -644,7 +644,7 @@
      (let ((connection* (allocate-connection! context*)))
        (connection-property-set-username! connection* username)
        (connection-property-set-password! connection* password)
-       (connect! connection* (location host) (string-length host))
+       (connect! connection* host (string-length host))
        (if database (use! context* connection* database))
        connection*))))
 
