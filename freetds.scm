@@ -519,10 +519,10 @@
   (syntax-rules ()
     ((_ retcode (loc message arguments ...) forms ...)
      (let-location ((retcode CS_INT))
-       (let ((result (begin forms ...)))
+       (receive results (begin forms ...)
          (if (not (success? retcode))
              (freetds-error 'loc message retcode arguments ...)
-             result))))))
+             (apply values results)))))))
 
  (define (allocate-context! version)
    (with-retcode-check retcode (cs_ctx_alloc "failed to allocate context")
@@ -696,38 +696,25 @@
      (send! command*)
      command*))
 
- (define (results! command* result-type*)
-   ((foreign-lambda CS_RETCODE
-                    "ct_results"
-                    (c-pointer "CS_COMMAND")
-                    (c-pointer "CS_INT"))
-    command*
-    result-type*))
+ (define (results! command*)
+   (let-location ((rettype CS_INT))
+     (let* ((results (foreign-lambda CS_RETCODE
+                                     "ct_results"
+                                     (c-pointer "CS_COMMAND")
+                                     (c-pointer "CS_INT")))
+            (retcode (results command* (location rettype))))
+       (values retcode rettype))))
 
- (define (results-info! command* type buffer* buffer-length out-length*)
-   (error-on-non-success
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_res_info"
-                       (c-pointer "CS_COMMAND")
-                       CS_INT
-                       (c-pointer "CS_VOID")
-                       CS_INT
-                       (c-pointer "CS_INT"))
-       command*
-       type
-       buffer*
-       buffer-length
-       out-length*))
-    'ct_res_info
-    "failed to get results info on ~a"))
-
- (define (results-info-column-count! command* column-count*)
-   (results-info! command*
-                  (foreign-value "CS_NUMDATA" CS_INT)
-                  column-count*
-                  (foreign-value "CS_UNUSED" CS_INT)
-                  (null-pointer)))
+ (define (results-info-column-count! command*)
+   (with-retcode-check retcode (results-info-column-count "failed to fetch column count")
+     (let-location ((colcnt int))
+       ((foreign-lambda* void (((c-pointer "CS_COMMAND") cmd)
+                               ((c-pointer int) colcnt)
+                               ((c-pointer int) retcode))
+                         "*retcode = ct_res_info(cmd, CS_NUMDATA, colcnt, "
+                         "                       CS_UNUSED, NULL);")
+        command* (location colcnt) (location retcode))
+       (values retcode colcnt))))
 
  (define (describe! command* item data-format*)
    (error-on-non-success
@@ -854,101 +841,99 @@
       "failed to close connection"))))
 
  (define (make-bound-variables connection* command*)
-   (let-location ((result-type CS_INT))
-     (let ((result-status (results! command* (location result-type))))
-       (match result-status
-         ((? success?)
-          (match result-type
-            ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
-            ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
-            ((or (? row-result?)
-                 (? row-format-result?))
-             (let-location ((column-count CS_INT))
-               (results-info-column-count! command* (location column-count))
-               (list-tabulate
-                column-count
-                (lambda (column)
-                  (let ((data-format* (make-CS_DATAFMT*)))
-                    (describe! command*
-                               (add1 column)
-                               data-format*)
-                    ;; let's have a table here for modifying,
-                    ;; if necessary, the data-format*.
-                    (let ((datatype
-                           (data-format-datatype data-format*)))
-                      (select datatype
-                        (((foreign-value "CS_CHAR_TYPE" CS_INT)
-                          (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
-                          (foreign-value "CS_TEXT_TYPE" CS_INT)
-                          (foreign-value "CS_VARCHAR_TYPE" CS_INT)
-                          (foreign-value "CS_BINARY_TYPE" CS_INT)
-                          (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
-                          (foreign-value "CS_VARBINARY_TYPE" CS_INT)
-                          (foreign-value "CS_DATETIME_TYPE" CS_INT)
-                          (foreign-value "CS_DATETIME4_TYPE" CS_INT))
-                         (data-format-format-set!
-                          data-format*
-                          (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
-                      (let ((make-type*
-                             (alist-ref/default
-                              datatype
-                              datatype->make-type*))
-                            (type-size
-                             (alist-ref/default
+   (let-values (((result-status result-type) (results! command*)))
+     (match result-status
+       ((? success?)
+        (match result-type
+          ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
+          ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
+          ((or (? row-result?)
+               (? row-format-result?))
+           (let-values (((retcode column-count) (results-info-column-count! command*)))
+             (list-tabulate
+              column-count
+              (lambda (column)
+                (let ((data-format* (make-CS_DATAFMT*)))
+                  (describe! command*
+                             (add1 column)
+                             data-format*)
+                  ;; let's have a table here for modifying,
+                  ;; if necessary, the data-format*.
+                  (let ((datatype
+                         (data-format-datatype data-format*)))
+                    (select datatype
+                            (((foreign-value "CS_CHAR_TYPE" CS_INT)
+                              (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
+                              (foreign-value "CS_TEXT_TYPE" CS_INT)
+                              (foreign-value "CS_VARCHAR_TYPE" CS_INT)
+                              (foreign-value "CS_BINARY_TYPE" CS_INT)
+                              (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
+                              (foreign-value "CS_VARBINARY_TYPE" CS_INT)
+                              (foreign-value "CS_DATETIME_TYPE" CS_INT)
+                              (foreign-value "CS_DATETIME4_TYPE" CS_INT))
+                             (data-format-format-set!
+                              data-format*
+                              (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
+                    (let ((make-type*
+                           (alist-ref/default
+                            datatype
+                            datatype->make-type*))
+                          (type-size
+                           (alist-ref/default
 
-                              datatype
-                              datatype->type-size))
-                            (translate-type*
-                             (alist-ref/default
-                              datatype
-                              datatype->translate-type*)))
-                        (let* ((length
-                                (inexact->exact
-                                 (ceiling
-                                  (/ (data-format-max-length
-                                      data-format*)
-                                     type-size))))
-                               (value* (make-type* length)))
-                          (let-location ((valuelen CS_INT)
-                                         (indicator CS_SMALLINT))
-                            (bind! command*
-                                   (+ column 1)
-                                   data-format*
-                                   value*
-                                   (location valuelen)
-                                   (location indicator))
-                            (cons* value* translate-type* length))))))))))
-            ((? command-done?)
-             ;; is this appropriate? do we need to deallocate the
-             ;; command here?
-             eor-object)
-            ((? command-succeed?)
-             '())
+                            datatype
+                            datatype->type-size))
+                          (translate-type*
+                           (alist-ref/default
+                            datatype
+                            datatype->translate-type*)))
+                      (let* ((length
+                              (inexact->exact
+                               (ceiling
+                                (/ (data-format-max-length
+                                    data-format*)
+                                   type-size))))
+                             (value* (make-type* length)))
+                        (let-location ((valuelen CS_INT)
+                                       (indicator CS_SMALLINT))
+                          (bind! command*
+                                 (+ column 1)
+                                 data-format*
+                                 value*
+                                 (location valuelen)
+                                 (location indicator))
+                          (cons* value* translate-type* length))))))))))
+          ((? command-done?)
+           ;; is this appropriate? do we need to deallocate the
+           ;; command here?
+           eor-object)
+          ((? command-succeed?)
+           '())
+          (_
+           (freetds-error 'make-bound-variables
+                          "ct_results returned a bizarre result-type"
+                          result-type))))
+       ((? fail?)
+        (let ((retcode (cancel! connection* command*)))
+          (match retcode
+            ((? fail?)
+             (close! connection*)
+             (freetds-error 'make-bound-variables
+                            (string-append "ct_results and ct_cancel failed, "
+                                           "prompting the connection to close")
+                            retcode))
             (_
              (freetds-error 'make-bound-variables
-                            "ct_results returned a bizarre result-type"
-                            result-type))))
-         ((? fail?)
-          (let ((retcode (cancel! connection* command*)))
-            (match retcode
-              ((? fail?)
-               (close! connection*)
-               (freetds-error 'make-bound-variables
-                              (string-append "ct_results and ct_cancel failed, "
-                                             "prompting the connection to close")
-                              retcode))
-              (_
-               (freetds-error 'make-bound-variables
-                              "ct_results failed, cancelling command"
-                              retcode)))))
-         ((? end-results?)
-          ;; #!eor
-          (command-drop! command*)
-          eor-object)
-         (_
-          (freetds-error 'make-bound-variables
-                         "ct_results returned a bizarre result status"
-                         result-status))))))
+                            "ct_results failed, cancelling command"
+                            retcode)))))
+       ((? end-results?)
+        ;; #!eor
+        (command-drop! command*)
+        eor-object)
+       (_
+        (freetds-error 'make-bound-variables
+                       "ct_results returned a bizarre result status"
+                       result-status)))))
 
  (define (row-fetch context* command* bound-variables)
    (let-values (((rows-read retcode) (fetch! command*)))
