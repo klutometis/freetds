@@ -9,35 +9,26 @@
     username
     password
     (lambda (connection)
-      #;(call-with-result-set
-       connection
-       "SELECT TOP 256 PhysicianId from RGILDS.dbo.ttAccession; SELECT TOP 256 PhysicianId from RGILDS.dbo.ttAccession"
-       (lambda (command)
-         (debug (result-values context connection command) (result-values context connection command))))
       (call-with-result-set
        connection
-       "CREATE TABLE #harro (id INT PRIMARY KEY)"
+       "CREATE TABLE #harro (a INT, b INT, c INT, d INT, e INT, f INT)"
+       (lambda (command) (debug (result-values context connection command))))
+      (for-each
+       (lambda (i)
+         (call-with-result-set
+          connection
+          (format "INSERT INTO #harro VALUES(~a, ~a, ~a, ~a, ~a, ~a)" i i i i i i)
+          (lambda (command) (result-values context connection command))))
+       (iota (expt 2 10)))
+      (call-with-result-set
+       connection
+       "SELECT a, b, c, d, e, f FROM #harro"
        (lambda (command) (debug (result-values context connection command))))
       (call-with-result-set
        connection
-       (format "INSERT INTO #harro VALUES(~a)" 1)
+       "SELECT a, b, c, d, e, f FROM #harro"
        (lambda (command) (debug (result-values context connection command))))
       (call-with-result-set
        connection
-       "INSERT INTO #harro VALUES(2)"
-       (lambda (command) (debug (result-values context connection command))))
-      (call-with-result-set
-       connection
-       "SELECT id FROM #harro"
-       (lambda (command) (debug (result-values context connection command))))
-      #;(let ((command (make-command connection "CREATE TABLE #harro (id INT); INSERT INTO #harro VALUES(1); SELECT id FROM #harro; SELECT TOP 10 PhysicianId from RGILDS.dbo.ttAccession")))
-        #;(let ((bound-variables (make-bound-variables connection command)))
-          (if (eor-object? bound-variables)
-              eor-object
-              (let next ((results '()))
-                (let ((row (row-fetch context command bound-variables)))
-                  (if (eod-object? row)
-                      results
-                      (next (cons row results)))))))
-        #;(debug (result-values context connection command)
-               (result-values context connection command)))))))
+       "SELECT a, b, c, d, e, f FROM #harro"
+       (lambda (command) (debug (result-values context connection command))))))))
