@@ -17,11 +17,6 @@
       foof-loop
       sql-null)
 
- (define alist-sentinel (cons #f #f))
-
- (define (alist-sentinel? object)
-   (eq? alist-sentinel object))
-
  (define alist-ref/default
    (case-lambda
     ((key alist)
@@ -29,8 +24,9 @@
                         alist
                         (lambda () (error "could not find key" key alist))))
     ((key alist default)
-     (let ((value (alist-ref key alist eqv? alist-sentinel)))
-       (if (alist-sentinel? value)
+     (let* ((alist-sentinel (cons #f #f))
+            (value (alist-ref key alist eqv? alist-sentinel)))
+       (if (eq? alist-sentinel value)
            (default)
            value)))))
 
