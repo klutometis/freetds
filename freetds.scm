@@ -34,17 +34,8 @@
            (default)
            value)))))
 
- (define eor-object (cons #f #f))
- 
- (define (eor-object? object) (eq? object eor-object))
-
- (set-read-syntax! 'eor (lambda (port) 'eor-object))
-
- (define eod-object (cons #f #f))
- 
- (define (eod-object? object) (eq? object eod-object))
-
- (set-read-syntax! 'eod (lambda (port) 'eod-object))
+ (define-record eor-object)
+ (define-record eod-object)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -985,7 +976,7 @@
           ((? command-done?)
            ;; is this appropriate? do we need to deallocate the
            ;; command here?
-           eor-object)
+           (make-eor-object))
           ((? command-succeed?)
            '())
           (_
@@ -1008,9 +999,8 @@
                             "ct_results failed, cancelling command"
                             retcode)))))
        ((? end-results?)
-        ;; #!eor
         (command-drop! command*)
-        eor-object)
+        (make-eor-object))
        (_
         (freetds-error 'make-bound-variables
                        "ct_results returned a bizarre result status"
@@ -1035,7 +1025,7 @@
                        "fetch! returned CS_FAIL"
                        retcode))
        ((? end-data?)
-        eod-object)
+        (make-eod-object))
        (_
         (freetds-error 'row-fetch
                        "fetch! returned unknown retcode"
@@ -1044,7 +1034,7 @@
  (define (result-values context* connection* command*)
    (let ((bound-variables (make-bound-variables connection* command*)))
      (if (eor-object? bound-variables)
-         eor-object
+         bound-variables
          (let next ((results '()))
            (let ((row (row-fetch context* command* bound-variables)))
              (if (eod-object? row)
