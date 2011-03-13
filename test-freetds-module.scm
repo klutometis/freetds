@@ -1,5 +1,6 @@
 #!/usr/bin/env chicken-scheme
-(use freetds debug)
+(use freetds)
+(define debug print)
 (include "test-freetds-secret.scm")
 (call-with-context
  (lambda (context)
@@ -9,7 +10,8 @@
     username
     password
     (lambda (connection)
-      #;(call-with-result-set
+      #;
+      (call-with-result-set
        connection
        "SELECT TOP 256 PhysicianId from RGILDS.dbo.ttAccession; SELECT TOP 256 PhysicianId from RGILDS.dbo.ttAccession"
        (lambda (command)
@@ -30,8 +32,8 @@
        connection
        "SELECT id FROM #harro"
        (lambda (command) (debug (result-values context connection command))))
-      #;(let ((command (make-command connection "CREATE TABLE #harro (id INT); INSERT INTO #harro VALUES(1); SELECT id FROM #harro; SELECT TOP 10 PhysicianId from RGILDS.dbo.ttAccession")))
-        #;(let ((bound-variables (make-bound-variables connection command)))
+      (let ((command (make-command connection "CREATE TABLE #harro2 (id INT); INSERT INTO #harro2 VALUES(1); SELECT id FROM #harro2; SELECT TOP 10 PhysicianId from RGILDS.dbo.ttAccession")))
+        (let ((bound-variables (make-bound-variables connection command)))
           (if (eor-object? bound-variables)
               eor-object
               (let next ((results '()))
@@ -39,5 +41,5 @@
                   (if (eod-object? row)
                       results
                       (next (cons row results)))))))
-        #;(debug (result-values context connection command)
+        (debug (result-values context connection command)
                (result-values context connection command)))))))

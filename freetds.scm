@@ -271,6 +271,7 @@
  (define (CS_DATETIME*->srfi-19-date context* datetime* type)
    (let ((daterec* (make-CS_DATEREC*)))
      (error-on-non-success
+      #f
       (lambda ()
         ((foreign-lambda CS_RETCODE
                          "cs_dt_crack"
@@ -510,22 +511,68 @@
  (define (command-succeed? retcode)
    (= retcode (foreign-value "CS_CMD_SUCCEED" CS_INT)))
 
- (define (error-on-non-success thunk location message . arguments)
+ (define (error-on-retcode retcode connection* location message arguments)
+   (when connection*
+     (apply check-server-errors! retcode connection* location message arguments)
+     (apply check-client-errors! retcode connection* location message arguments))
+   ;; Only drops down to here if we get no error from the checks
+   ;; or when connection is #f
+   (apply freetds-error location message retcode arguments))
+
+ (define (error-on-non-success connection* thunk location message . arguments)
    (let ((retcode (thunk)))
-     (if (not (success? retcode))
-         (apply freetds-error location message retcode arguments))))
+     (unless (success? retcode)
+       (apply error-on-retcode retcode connection* location message arguments))))
 
 (define-syntax with-retcode-check
   (syntax-rules ()
-    ((_ retcode (loc message arguments ...) forms ...)
+    ((_ retcode connection* (loc message arguments ...) forms ...)
      (let-location ((retcode CS_INT))
        (receive results (begin forms ...)
-         (if (not (success? retcode))
-             (freetds-error 'loc message retcode arguments ...)
-             (apply values results)))))))
+         (if (success? retcode)
+             (apply values results)
+             (error-on-retcode retcode connection* 'loc message arguments ...)))))))
+
+(define (check-server-errors! retcode conn loc . args)
+  (and-let* ((res ((foreign-safe-lambda*
+                    scheme-object (((c-pointer "CS_CONNECTION") conn))
+                    "CS_SERVERMSG msg; CS_INT res;"
+                    "C_word *str; C_word fin;"
+                    " "
+                    "res = ct_diag(conn, CS_GET, CS_SERVERMSG_TYPE, 1, &msg);"
+                    "if (res == CS_NOMSG)"
+                    "  C_return(C_SCHEME_FALSE);"
+                    "else if (res != CS_SUCCEED)"
+                    "  C_return(C_fix(res));"
+                    " "
+                    "str = C_alloc(C_SIZEOF_STRING(msg.textlen));"
+                    "fin = C_string(&str, msg.textlen, msg.text);"
+                    "C_return(fin);") conn)))
+    (if (number? res)
+        (apply freetds-error 'ct_diag "could not retrieve error message" res args)
+        (apply freetds-error loc res retcode args))))
+
+(define (check-client-errors! retcode conn loc . args)
+  (and-let* ((res ((foreign-safe-lambda*
+                    scheme-object (((c-pointer "CS_CONNECTION") conn))
+                    "CS_CLIENTMSG msg; CS_INT res;"
+                    "C_word *str; C_word fin;"
+                    " "
+                    "res = ct_diag(conn, CS_GET, CS_CLIENTMSG_TYPE, 1, &msg);"
+                    "if (res == CS_NOMSG)"
+                    "  C_return(C_SCHEME_FALSE);"
+                    "else if (res != CS_SUCCEED)"
+                    "  C_return(C_fix(res));"
+                    " "
+                    "str = C_alloc(C_SIZEOF_STRING(msg.msgstringlen));"
+                    "fin = C_string(&str, msg.msgstringlen, msg.msgstring);"
+                    "C_return(fin);") conn)))
+    (if (number? res)
+        (apply freetds-error 'ct_diag "could not retrieve error message" res args)
+        (apply freetds-error loc res retcode args))))
 
  (define (allocate-context! version)
-   (with-retcode-check retcode (cs_ctx_alloc "failed to allocate context")
+   (with-retcode-check retcode #f (cs_ctx_alloc "failed to allocate context")
      ((foreign-lambda* (c-pointer "CS_CONTEXT") ((CS_INT version)
                                                  ((c-pointer int) res))
                        "CS_CONTEXT *p;"
@@ -535,6 +582,7 @@
 
  (define (initialize-context! context* version)
    (error-on-non-success
+    #f
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_init"
@@ -556,7 +604,7 @@
        context*))))
 
  (define (allocate-connection! context*)
-   (with-retcode-check retcode (ct_con_alloc "failed to allocate a connection")
+   (with-retcode-check retcode #f (ct_con_alloc "failed to allocate a connection")
      ((foreign-lambda* (c-pointer "CS_CONNECTION") (((c-pointer "CS_CONTEXT") ctx)
                                                     ((c-pointer int) res))
                        "CS_CONNECTION *con;"
@@ -571,6 +619,7 @@
                               buffer-length
                               out-length*)
    (error-on-non-success
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_con_props"
@@ -617,6 +666,7 @@
 
  (define (connect! connection* server server-length)
    (error-on-non-success
+    #f ; Not yet!
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_connect"
@@ -627,7 +677,15 @@
        server
        server-length))
     'ct_connect
-    "failed to connect to server"))
+    "failed to connect to server")
+   (error-on-non-success
+    connection*
+    (lambda ()
+      ((foreign-lambda* CS_RETCODE (((c-pointer "CS_CONNECTION") conn))
+                        "C_return(ct_diag(conn, CS_INIT, CS_UNUSED, "
+                        "                 CS_UNUSED, NULL));") connection*))
+    'ct_connect
+    "could not initialize error handling"))
 
  (define (use! context* connection* database)
    (call-with-result-set
@@ -649,7 +707,7 @@
        connection*))))
 
  (define (allocate-command! connection*)
-   (with-retcode-check retcode (ct_cmd_alloc "failed to allocate command")
+   (with-retcode-check retcode connection* (ct_cmd_alloc "failed to allocate command")
      ((foreign-lambda* (c-pointer "CS_COMMAND") (((c-pointer "CS_CONNECTION") ctx)
                                                  ((c-pointer int) res))
                        "CS_COMMAND *cmd;"
@@ -657,8 +715,9 @@
                        "C_return(cmd);")
       connection* (location retcode))))
 
- (define (command! command* type buffer* buffer-length option)
+ (define (command! connection* command* type buffer* buffer-length option)
    (error-on-non-success
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_command"
@@ -676,8 +735,9 @@
     'ct_command
     (format "failed to issue command ~a" buffer*)))
 
- (define (send! command*)
+ (define (send! command* connection*)
    (error-on-non-success
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_send"
@@ -688,15 +748,16 @@
 
  (define (make-command connection* query . parameters)
    (let ((command* (allocate-command! connection*)))
-     (command! command*
+     (command! connection*
+               command*
                (foreign-value "CS_LANG_CMD" CS_INT)
                query
                (foreign-value "CS_NULLTERM" CS_INT)
                (foreign-value "CS_UNUSED" CS_INT))
-     (send! command*)
+     (send! command* connection*)
      command*))
 
- (define (results! command*)
+ (define (results! connection* command*)
    (let-location ((rettype CS_INT))
      (let* ((results (foreign-lambda CS_RETCODE
                                      "ct_results"
@@ -706,7 +767,7 @@
        (values retcode rettype))))
 
  (define (results-info-column-count! command*)
-   (with-retcode-check retcode (results-info-column-count "failed to fetch column count")
+   (with-retcode-check retcode #f (results-info-column-count! "failed to fetch column count")
      (let-location ((colcnt int))
        ((foreign-lambda* void (((c-pointer "CS_COMMAND") cmd)
                                ((c-pointer int) colcnt)
@@ -716,8 +777,9 @@
         command* (location colcnt) (location retcode))
        (values retcode colcnt))))
 
- (define (describe! command* item data-format*)
+ (define (describe! connection* command* item data-format*)
    (error-on-non-success
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_describe"
@@ -730,13 +792,15 @@
     'ct_describe
     "failed to describe column"))
 
- (define (bind! command*
+ (define (bind! connection*
+                command*
                 item
                 data-format*
                 buffer*
                 copied*
                 indicator*)
    (error-on-non-success
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_bind"
@@ -757,6 +821,7 @@
 
  (define (command-drop! command*)
    (error-on-non-success
+    #f
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_cmd_drop"
@@ -767,6 +832,7 @@
 
  (define (connection-close! connection*)
    (error-on-non-success
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_con_drop"
@@ -777,6 +843,7 @@
 
  (define (context-exit! context*)
    (error-on-non-success
+    #f
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_exit"
@@ -789,6 +856,7 @@
 
  (define (context-drop! context*)
    (error-on-non-success
+    #f
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "cs_ctx_drop"
@@ -830,6 +898,7 @@
      (close! connection* (foreign-value "CS_FORCE_CLOSE" CS_INT)))
     ((connection* option)
      (error-on-non-success
+      #f ; Not anymore?
       (lambda ()
         ((foreign-lambda CS_RETCODE
                          "ct_close"
@@ -841,7 +910,7 @@
       "failed to close connection"))))
 
  (define (make-bound-variables connection* command*)
-   (let-values (((result-status result-type) (results! command*)))
+   (let-values (((result-status result-type) (results! connection* command*)))
      (match result-status
        ((? success?)
         (match result-type
@@ -854,7 +923,8 @@
               column-count
               (lambda (column)
                 (let ((data-format* (make-CS_DATAFMT*)))
-                  (describe! command*
+                  (describe! connection*
+                             command*
                              (add1 column)
                              data-format*)
                   ;; let's have a table here for modifying,
@@ -896,7 +966,8 @@
                              (value* (make-type* length)))
                         (let-location ((valuelen CS_INT)
                                        (indicator CS_SMALLINT))
-                          (bind! command*
+                          (bind! connection*
+                                 command*
                                  (+ column 1)
                                  data-format*
                                  value*
@@ -910,6 +981,8 @@
           ((? command-succeed?)
            '())
           (_
+           (check-server-errors! result-type connection* 'make-bound-variables)
+           ;; If no server errors, something's up
            (freetds-error 'make-bound-variables
                           "ct_results returned a bizarre result-type"
                           result-type))))
