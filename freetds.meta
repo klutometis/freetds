@@ -1,10 +1,11 @@
 ((egg "unicode-greek.egg")
- (license "MIT")
+ (license "LGPL-3")
  (category databases)
  (needs setup-helper
         autocompile)
  (test-depends test)
- (author "Peter Danenberg")
+ (author "Peter Danenberg"
+         "Peter Bex")
  (synopsis "Bindings for FreeTDS")
  (files "freetds.scm"
         "freetds.setup"))
