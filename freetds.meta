@@ -1,4 +1,4 @@
-((egg "unicode-greek.egg")
+((egg "freetds.egg")
  (license "LGPL-3")
  (category databases)
  (needs setup-helper
