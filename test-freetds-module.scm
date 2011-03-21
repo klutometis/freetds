@@ -1,5 +1,6 @@
 #!/usr/bin/env chicken-scheme
-(use freetds debug)
+(use freetds)
+(define debug print)
 (include "test-freetds-secret.scm")
 (call-with-context
  (lambda (context)
