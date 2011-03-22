@@ -519,7 +519,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define (command-succeed? retcode)
    (= retcode (foreign-value "CS_CMD_SUCCEED" CS_INT)))
 
- (define (error-on-retcode retcode connection* location message arguments)
+ (define (error-on-retcode retcode connection* location message . arguments)
    (when connection*
      (apply check-server-errors! retcode connection* location message arguments)
      (apply check-client-errors! retcode connection* location message arguments))
