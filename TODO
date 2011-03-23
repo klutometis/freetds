@@ -1,4 +1,6 @@
 # -*- mode: org; -*-
+* TODO test case
+  throw in some null strings, too.
 * TODO fix the fucking memory problems (unusable?)
   this thing is unusable for anything useful; each =let-location= is
   possibly suspect. convert them to =malloc/frees=.
