@@ -74,7 +74,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
             (let ((%let (rename 'let))
                   (%define (rename 'define))
                   (%case-lambda (rename 'case-lambda))
-                  (%foreign-primitive (rename 'foreign-primitive))
+                  (%foreign-lambda* (rename 'foreign-lambda*))
                   (%foreign-value (rename 'foreign-value))
                   (%c-pointer (rename 'c-pointer))
                   (%void (rename 'void))
@@ -99,7 +99,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                            (,make-type 1))
                           ((length)
                            (,%let ((type*
-                                    ((,%foreign-primitive
+                                    ((,%foreign-lambda*
                                       (c-pointer ,(symbol->string type))
                                       ((int length))
                                       ,malloc)
@@ -116,10 +116,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                               type*
                               (,%lambda (type*)
                                 ;; (,%free type*)
-                                ((,%foreign-primitive
+                                ((,%foreign-lambda*
                                   void
                                   (((c-pointer ,(symbol->string type)) type))
-                                  "free(type);")
+                                  "C_free(type);")
                                  type*)))
                              type*)))))))))))
 
@@ -269,7 +269,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (char-vector->string
       vector
       (lambda (vector i)
-        ((foreign-primitive
+        ((foreign-lambda*
           CS_CHAR
           (((c-pointer "CS_CHAR") vector)
            (int i))
