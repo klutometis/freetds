@@ -65,63 +65,52 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define-syntax define-make-type*
    (er-macro-transformer
     (lambda (expression rename compare)
-      (match-let (((_ type) expression))
-        (let ((malloc
-               (sprintf "C_return(malloc(length * (sizeof(~a))));"
-                        type)))
-          (let* ((type* (string->symbol (sprintf "~a*" type)))
-                 (make-type (string->symbol (sprintf "make-~a" type*))))
-            (let ((%let (rename 'let))
-                  (%define (rename 'define))
-                  (%case-lambda (rename 'case-lambda))
-                  (%foreign-lambda* (rename 'foreign-lambda*))
-                  (%foreign-value (rename 'foreign-value))
-                  (%c-pointer (rename 'c-pointer))
-                  (%void (rename 'void))
-                  (%int (rename 'int))
-                  (%conc (rename 'conc))
-                  (%null-pointer? (rename 'null-pointer?))
-                  (%signal (rename 'signal))
-                  (%make-property-condition
-                   (rename 'make-property-condition))
-                  (%let (rename 'let))
-                  (%if (rename 'if))
-                  (%format (rename 'format))
-                  (%symbol->string (rename 'symbol->string))
-                  (%type (rename 'type))
-                  (%set-finalizer! (rename 'set-finalizer!))
-                  (%lambda (rename 'lambda))
-                  (%begin (rename 'begin))
-                  (%free (rename 'free)))
-              `(,%define ,make-type
-                         (,%case-lambda
-                          (()
-                           (,make-type 1))
-                          ((length)
-                           (,%let ((type*
-                                    ((,%foreign-lambda*
-                                      (c-pointer ,(symbol->string type))
-                                      ((int length))
-                                      ,malloc)
-                                     length)))
-                             (,%if (,%null-pointer? type*)
-                                   (,%signal
-                                    (,%make-property-condition
-                                     'exn
-                                     'location ',make-type
-                                     'message (,%format "could not allocate ~a ~a(s)"
-                                                        length
-                                                        ',type))))
-                             (,%set-finalizer!
-                              type*
-                              (,%lambda (type*)
-                                ;; (,%free type*)
-                                ((,%foreign-lambda*
-                                  void
-                                  (((c-pointer ,(symbol->string type)) type))
-                                  "C_free(type);")
-                                 type*)))
-                             type*)))))))))))
+      (let* ((type (cadr expression))
+             (make-type (string->symbol (sprintf "make-~a*" type)))
+             (%let (rename 'let))
+             (%define (rename 'define))
+             (%case-lambda (rename 'case-lambda))
+             (%foreign-lambda* (rename 'foreign-lambda*))
+             (%null-pointer? (rename 'null-pointer?))
+             (%signal (rename 'signal))
+             (%make-property-condition (rename 'make-property-condition))
+             (%length (rename 'length))
+             (%type* (rename 'type*))
+             (%let (rename 'let))
+             (%if (rename 'if))
+             (%format (rename 'format))
+             (%symbol->string (rename 'symbol->string))
+             (%type (rename 'type))
+             (%set-finalizer! (rename 'set-finalizer!))
+             (%lambda (rename 'lambda))
+             (%begin (rename 'begin))
+             (%free (rename 'free)))
+        `(,%define ,make-type
+           (,%case-lambda
+            (()
+             (,make-type 1))
+            ((,%length)
+             (,%let ((,%type*
+                      ((,%foreign-lambda*
+                        (c-pointer ,(symbol->string type))
+                        ((int length))
+                        ,(sprintf "C_return(malloc(length * (sizeof(~a))));" type))
+                       ,%length)))
+                    (,%if (,%null-pointer? ,%type*)
+                          (,%signal
+                           (,%make-property-condition
+                            'exn
+                            'location ',make-type
+                            'message (,%format "could not allocate ~a ~a(s)"
+                                               ,%length
+                                               ',type))))
+                    (,%set-finalizer!
+                     ,%type*
+                     (,%foreign-lambda*
+                      void
+                      (((c-pointer ,(symbol->string type)) type))
+                      "C_free(type);"))
+                    ,%type*))))))))
 
  (define-syntax define-type-size
    (er-macro-transformer
