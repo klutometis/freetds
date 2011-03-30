@@ -801,9 +801,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                 command*
                 item
                 data-format*
-                buffer*
-                copied*
-                indicator*)
+                buffer*)
    (error-on-non-success
     connection*
     (lambda ()
@@ -819,8 +817,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        item
        data-format*
        buffer*
-       copied*
-       indicator*))
+       #f
+       #f))
     'ct_bind
     "failed to bind statement"))
 
@@ -969,16 +967,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                     data-format*)
                                    type-size))))
                              (value* (make-type* length)))
-                        (let-location ((valuelen CS_INT)
-                                       (indicator CS_SMALLINT))
-                          (bind! connection*
-                                 command*
-                                 (+ column 1)
-                                 data-format*
-                                 value*
-                                 (location valuelen)
-                                 (location indicator))
-                          (cons* value* translate-type* length))))))))))
+                        (bind! connection*
+                               command*
+                               (+ column 1)
+                               data-format*
+                               value*)
+                        (cons* value* translate-type* length)))))))))
           ((? command-done?)
            ;; is this appropriate? do we need to deallocate the
            ;; command here?
