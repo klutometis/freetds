@@ -659,17 +659,17 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (connection-property-set! connection*
                              (foreign-value "CS_USERNAME" CS_INT)
                              username
-                             (foreign-value "CS_NULLTERM" CS_INT)
+                             (string-length username)
                              (null-pointer)))
 
  (define (connection-property-set-password! connection* password)
    (connection-property-set! connection*
                              (foreign-value "CS_PASSWORD" CS_INT)
                              password
-                             (foreign-value "CS_NULLTERM" CS_INT)
+                             (string-length password)
                              (null-pointer)))
 
- (define (connect! connection* server server-length)
+ (define (connect! connection* server)
    (error-on-non-success
     #f ; Not yet!
     (lambda ()
@@ -680,7 +680,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        CS_INT)
        connection*
        server
-       server-length))
+       (string-length server)))
     'ct_connect
     "failed to connect to server")
    (error-on-non-success
@@ -707,7 +707,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (let ((connection* (allocate-connection! context*)))
        (connection-property-set-username! connection* username)
        (connection-property-set-password! connection* password)
-       (connect! connection* host (string-length host))
+       (connect! connection* host)
        (if database (use! context* connection* database))
        connection*))))
 
@@ -720,7 +720,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        "C_return(cmd);")
       connection* (location retcode))))
 
- (define (command! connection* command* type buffer* buffer-length option)
+ (define (command! connection* command* type buffer* option)
    (error-on-non-success
     connection*
     (lambda ()
@@ -735,7 +735,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        command*
        type
        buffer*
-       buffer-length
+       (foreign-value "CS_NULLTERM" CS_INT)
        option))
     'ct_command
     (format "failed to issue command ~a" buffer*)))
@@ -757,7 +757,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                command*
                (foreign-value "CS_LANG_CMD" CS_INT)
                query
-               (foreign-value "CS_NULLTERM" CS_INT)
                (foreign-value "CS_UNUSED" CS_INT))
      (send! command* connection*)
      command*))
