@@ -751,13 +751,79 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_send
     "failed to send command"))
 
- (define (make-command connection* query . parameters)
+ (define (add-param! connection* command* param)
+   (let* ((fmt* (make-CS_DATAFMT*))
+          (datalen 1) ;; Currently unused
+          ;; TODO: Figure out a way to make this sane
+          (mem* (cond
+                 ((string? param)
+                  (when (> (string-length param) 255)
+                    (error "Cannot store strings > 255 characters!"))
+                  (data-format-datatype-set!
+                   fmt* (foreign-value "CS_VARCHAR_TYPE" CS_INT))
+                  ((foreign-lambda* c-pointer
+                                    ((c-string s) (int len))
+                                    "CS_VARCHAR *res;"
+                                    "res = malloc(sizeof(CS_VARCHAR));"
+                                    "if (res == NULL)"
+                                    "  C_return(res);"
+                                    "res->len = len;"
+                                    "memcpy(res->str, s, len);"
+                                    "C_return(res);") param (string-length param)))
+                 ((fixnum? param)
+                  (data-format-datatype-set!
+                   fmt* (foreign-value "CS_INT_TYPE" CS_INT))
+                  ((foreign-lambda* c-pointer
+                                    ((int i))
+                                    "CS_INT *res;"
+                                    "res = malloc(sizeof(CS_INT));"
+                                    "if (res == NULL)"
+                                    "  C_return(res);"
+                                    "*res = i;"
+                                    "C_return(res);") param))
+                 ((flonum? param)
+                  (data-format-datatype-set!
+                   fmt* (foreign-value "CS_FLOAT_TYPE" CS_INT))
+                  ((foreign-lambda* c-pointer
+                                    ((float f))
+                                    "CS_FLOAT *res;"
+                                    "res = malloc(sizeof(CS_FLOAT));"
+                                    "if (res == NULL)"
+                                    "  C_return(res);"
+                                    "*res = f;"
+                                    "C_return(res);") param))
+                 ((sql-null? param) #t)
+                 (else (error "Unknown parameter type" param)))))
+     (data-format-name-length-set! fmt* 0) ; All params are nameless
+     (data-format-status-set! fmt* (foreign-value "CS_INPUTVALUE" CS_INT))
+     (unless mem* (error "Could not allocate memory for parameter" param))
+     ;; Set up the parameter pointer's memory to be cleaned up when the command
+     ;; is cleaned up (but no earlier!) -- it's not a pointer when sql-null
+     (when (pointer? mem*) (set-finalizer! command* (lambda (c) (free mem*))))
+     (error-on-non-success
+      connection*
+      (lambda ()
+        ((foreign-lambda CS_RETCODE
+                         "ct_param"
+                         (c-pointer "CS_COMMAND")
+                         (c-pointer "CS_DATAFMT")
+                         (c-pointer "CS_VOID")
+                         CS_INT
+                         CS_SMALLINT)
+         command* fmt* mem* datalen (if (sql-null? param) -1 0)))
+      'ct_param
+      "failed to add parameter to command"
+      command*
+      param)))
+
+ (define (make-command connection* query parameters)
    (let ((command* (allocate-command! connection*)))
      (command! connection*
                command*
                (foreign-value "CS_LANG_CMD" CS_INT)
                query
                (foreign-value "CS_UNUSED" CS_INT))
+     (for-each (lambda (p) (add-param! connection* command* p)) parameters)
      (send! command* connection*)
      command*))
 
@@ -998,7 +1064,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                             "ct_results failed, cancelling command"
                             retcode)))))
        ((? end-results?)
-        (command-drop! command*)
         (make-eor-object))
        (_
         (freetds-error 'make-bound-variables
@@ -1019,7 +1084,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        ((? fail?)
         ;; cancel
         ;; fail again -> close
-        (command-drop! command*)
         (freetds-error 'row-fetch
                        "fetch! returned CS_FAIL"
                        retcode))
@@ -1040,29 +1104,20 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                  results
                  (next (cons row results))))))))
 
- ;; this version won't even let me use the ((lambda () (format ...)))
- ;; trick for procedural strings.
- ;; (define (call-with-result-set connection* query process-command)
- ;;   (let ((command* #f))
- ;;     (dynamic-wind
- ;;         (lambda () (set! command* (make-command connection* query)))
- ;;         (lambda () (process-command command*))
- ;;         (lambda ()
- ;;           ;; Only cancel the command here, so that the connection is
- ;;           ;; reusable.
- ;;           (cancel! (null-pointer) command*)
- ;;           (command-drop! command*))))
-
- (define (call-with-result-set connection* query process-command)
-   (let ((command* (make-command connection* query)))
-     (dynamic-wind
-         void
-         (lambda () (process-command command*))
-         (lambda ()
-           ;; Only cancel the command here, so that the connection is
-           ;; reusable.
-           (cancel! (null-pointer) command*)
-           (command-drop! command*)))))
+ (define (call-with-result-set connection* query . rest-args)
+   ;; TODO: This is not too efficient
+   (receive (params last)
+     (split-at rest-args (sub1 (length rest-args)))
+     (let* ((process-command (car last))
+            (command* (make-command connection* query params)))
+       (dynamic-wind
+           void
+           (lambda () (process-command command*))
+           (lambda ()
+             ;; Only cancel the command here, so that the connection is
+             ;; reusable.
+             (cancel! (null-pointer) command*)
+             (command-drop! command*))))))
 
  (define (call-with-context process-context)
    (let ((context* (make-context)))

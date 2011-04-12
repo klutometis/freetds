@@ -16,11 +16,11 @@
        (lambda (command) (debug (result-values context connection command))))
       (for-each
        (lambda (i)
-         (let ((i (number->string i)))
-           (call-with-result-set
-            connection
-            (format "INSERT INTO #harro VALUES(~a, ~a, ~a, ~a, ~a, ~a)" i i i i i i)
-            (lambda (command) (result-values context connection command)))))
+         (call-with-result-set
+          connection
+          "INSERT INTO #harro VALUES(?, ?, ?, ?, ?, ?)"
+          i (+ i 1) (+ i 2) (+ i 3) (+ i 4) (+ i 5)
+          (lambda (command) (result-values context connection command))))
        (iota (expt 2 10)))
       (call-with-result-set
        connection
