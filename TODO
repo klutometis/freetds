@@ -1,26 +1,6 @@
 # -*- mode: org; -*-
-* TODO test case
+* TODO test cases
   throw in some null strings, too.
-* TODO fix the fucking memory problems (unusable?)
-  this thing is unusable for anything useful; each =let-location= is
-  possibly suspect. convert them to =malloc/frees=.
-
-  until then, this whole expirement was a failure; we'll go back to
-  using python wrappers and throw away six (eight?) weeks of work.
-
-  maybe we really should try =bind=.
-
-  or is it maybe that i'm misunderstanding the freetds stuff itself
-  and the use of e.g. =cancel= across =send= vs. =connect=
-  vs. =context=?
-* TODO reimplement in [[http://chicken.wiki.br/easyffi][easyffi]]?
-  might get rid of the segfaults; or do we still have the problem of
-  memory management? (I suspect we do; but maybe easyffi handles
-  conversion.)
-
-  [[http://wiki.call-cc.org/eggref/4/bind][bind]] is the new version, apparently; also check out the
-  [[http://wiki.call-cc.org/eggref/4/bind#general-operation][bind-<struct-name>]] stuff. Does some malloc, etc. Not to mention
-  [[http://wiki.call-cc.org/eggref/4/bind#bind-opaque-type][bind-opaque-type]], etc.
 * TODO [#A] determining whether data is NULL
   should we zero the memory first? maybe it doesn't touch it. never
   mind; see guide, p. 55:
@@ -81,9 +61,6 @@
   multiple contexts, although a typical application will need just
   one.
   #+END_QUOTE
-* TODO =let-location=
-  it seems like we can use =let-location= when an allocation function
-  is provided by the library; otherwise, use the =make-type*= hack.
 * TODO alist-lib
 * TODO =translate-type*= -> ={un,}parse-type*=
 * TODO custom types
@@ -190,6 +167,21 @@
   an extra query every time? is it the case that you have no idea how
   many 0s are significant? i think so. or is it the case that 256
   corresponds to only 4 bytes?
+* DONE fix the fucking memory problems (unusable?)
+  CLOSED: [2011-04-11 Mon 19:23]
+  - CLOSING NOTE [2011-04-11 Mon 19:24] \\
+    done? peter bex fixed some incorrect calling semantics.
+  this thing is unusable for anything useful; each =let-location= is
+  possibly suspect. convert them to =malloc/frees=.
+
+  until then, this whole expirement was a failure; we'll go back to
+  using python wrappers and throw away six (eight?) weeks of work.
+
+  maybe we really should try =bind=.
+
+  or is it maybe that i'm misunderstanding the freetds stuff itself
+  and the use of e.g. =cancel= across =send= vs. =connect=
+  vs. =context=?
 * DONE select database when connecting
   CLOSED: [2011-02-15 Tue 17:03]
   #+BEGIN_SRC scheme :tangle test-use.scm :shebang #!/usr/bin/env chicken-scheme
@@ -917,6 +909,19 @@
   include at least two calls to CS-Library, because they must allocate
   and drop a context structure. (ctlib guide, p. 18)
   #+END_QUOTE
+* CANCELED reimplement in [[http://chicken.wiki.br/easyffi][easyffi]]?
+  CLOSED: [2011-04-11 Mon 19:23]
+  might get rid of the segfaults; or do we still have the problem of
+  memory management? (I suspect we do; but maybe easyffi handles
+  conversion.)
+
+  [[http://wiki.call-cc.org/eggref/4/bind][bind]] is the new version, apparently; also check out the
+  [[http://wiki.call-cc.org/eggref/4/bind#general-operation][bind-<struct-name>]] stuff. Does some malloc, etc. Not to mention
+  [[http://wiki.call-cc.org/eggref/4/bind#bind-opaque-type][bind-opaque-type]], etc.
+* CANCELED =let-location=
+  CLOSED: [2011-04-11 Mon 19:24]
+  it seems like we can use =let-location= when an allocation function
+  is provided by the library; otherwise, use the =make-type*= hack.
 * CANCELED get rid of the implicit table crap in =define-make-type*/type-size=
 # <<implicit-table-crap>>
   CLOSED: [2010-12-16 Thu 18:27]
