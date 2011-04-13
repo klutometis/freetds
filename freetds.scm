@@ -21,7 +21,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
 (module
  freetds
- *
+ (call-with-context
+  call-with-connection
+  call-with-result-set
+  result-values
+  ;; if we don't export varchar-string, there are compilation errors!
+  varchar-string)
  (import scheme
          chicken
          foreign)
