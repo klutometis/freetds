@@ -1,4 +1,10 @@
 # -*- mode: org; -*-
+* TODO would like to be able to get an optional alist out of query-results
+  e.g. =((<column-name-1> . <value-1>) (<column-name-2> . <value-2>) ...)=
+* TODO column information: type, name, etc.
+  given a table; see
+  [[http://codesnippets.joyent.com/posts/show/337]]. can also extract the
+  tables in a given database, etc.
 * TODO test cases
   throw in some null strings, too.
 * TODO [#A] determining whether data is NULL
