@@ -4,7 +4,29 @@
 * TODO column information: type, name, etc.
   given a table; see
   [[http://codesnippets.joyent.com/posts/show/337]]. can also extract the
-  tables in a given database, etc.
+  tables in a given database, etc. this sort of information is static,
+  though, and possibly useless; we need query-specific information,
+  too.
+
+  we should be able to make this query-specific, though, with
+  =describe!=; cf. name in =CS_DATAFMT=:
+
+  #+BEGIN_SRC c
+    typedef struct _cs_datafmt
+    {
+      CS_CHAR name[CS_MAX_NAME];
+      CS_INT namelen;
+      CS_INT datatype;
+      CS_INT format;
+      CS_INT maxlength;
+      CS_INT scale;
+      CS_INT precision;
+      CS_INT status;
+      CS_INT count;
+      CS_INT usertype;
+      CS_LOCALE *locale;
+    } CS_DATAFMT;    
+  #+END_SRC
 * TODO test cases
   throw in some null strings, too.
 * TODO [#A] determining whether data is NULL
