@@ -324,6 +324,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       length) 
      vector))
 
+ (define null-indicator?
+   (foreign-lambda* bool (((c-pointer "CS_SMALLINT") indicator))
+                    "C_return(*indicator == -1);"))
+
  (define (translate-CS_BINARY* context* binary* length)
    (CS_BINARY*->vector binary* length))
  (define translate-CS_LONGBINARY* translate-CS_BINARY*)
@@ -815,7 +819,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                          (c-pointer "CS_VOID")
                          CS_INT
                          CS_SMALLINT)
-         command* fmt* mem* datalen (if (sql-null? param) -1 0)))
+         command* fmt* (and (pointer? mem*) mem*) datalen (if (sql-null? param) -1 0)))
       'ct_param
       "failed to add parameter to command"
       command*
@@ -871,7 +875,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                 command*
                 item
                 data-format*
-                buffer*)
+                buffer*
+                indicator*)
    (error-on-non-success
     connection*
     (lambda ()
@@ -888,9 +893,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        data-format*
        buffer*
        #f
-       #f))
+       indicator*))
     'ct_bind
-    "failed to bind statement"))
+    "failed to bind result value"))
 
  (define (command-drop! command*)
    (error-on-non-success
@@ -1036,13 +1041,15 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                 (/ (data-format-max-length
                                     data-format*)
                                    type-size))))
-                             (value* (make-type* length)))
-                        (bind! connection*
-                               command*
-                               (+ column 1)
-                               data-format*
-                               value*)
-                        (cons* value* translate-type* length)))))))))
+                             (value* (make-type* length))
+                             (indicator* (make-CS_SMALLINT* 1)))
+                        (if (bind! connection*
+                                   command*
+                                   (+ column 1)
+                                   data-format*
+                                   value*
+                                   indicator*)
+                            (cons* value* indicator* translate-type* length))))))))))
           ((? command-done?)
            ;; is this appropriate? do we need to deallocate the
            ;; command here?
@@ -1080,11 +1087,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (match retcode
        ((? success? row-fail?)
         (map (lambda (bound-variable)
-               (match-let (((value translate-type* . length)
+               (match-let (((value indicator translate-type* . length)
                             bound-variable))
-                          (translate-type* context*
-                                           value
-                                           length)))
+                          (if (null-indicator? indicator)
+                              (sql-null)
+                              (translate-type* context* value length))))
              bound-variables))
        ((? fail?)
         ;; cancel
