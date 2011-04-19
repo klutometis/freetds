@@ -762,22 +762,23 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define (add-param! connection* command* param)
    (let* ((fmt* (make-CS_DATAFMT*))
-          (datalen 1) ;; Currently unused
+          (datalen 1) ;; Only used for char types
           ;; TODO: Figure out a way to make this sane
           (mem* (cond
                  ((string? param)
                   (when (> (string-length param) 255)
                     (error "Cannot store strings > 255 characters!"))
                   (data-format-datatype-set!
-                   fmt* (foreign-value "CS_VARCHAR_TYPE" CS_INT))
+                   fmt* (foreign-value "CS_CHAR_TYPE" CS_INT))
+                  (data-format-max-length-set! fmt* (string-length param))
+                  (set! datalen (string-length param))
                   ((foreign-lambda* c-pointer
-                                    ((c-string s) (int len))
+                                    ((scheme-pointer s) (int len))
                                     "CS_VARCHAR *res;"
-                                    "res = malloc(sizeof(CS_VARCHAR));"
+                                    "res = malloc(sizeof(CS_CHAR) * len);"
                                     "if (res == NULL)"
                                     "  C_return(res);"
-                                    "res->len = len;"
-                                    "memcpy(res->str, s, len);"
+                                    "memcpy(res, s, len);"
                                     "C_return(res);") param (string-length param)))
                  ((fixnum? param)
                   (data-format-datatype-set!
@@ -801,7 +802,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                     "  C_return(res);"
                                     "*res = f;"
                                     "C_return(res);") param))
-                 ((sql-null? param) #t)
+                 ((sql-null? param)
+                  ;; Any value is ok, but if we don't set *something*,
+                  ;; ct_send will complain
+                  (data-format-datatype-set!
+                   fmt* (foreign-value "CS_INT_TYPE" CS_INT))
+                  #t)
                  (else (error "Unknown parameter type" param)))))
      (data-format-name-length-set! fmt* 0) ; All params are nameless
      (data-format-status-set! fmt* (foreign-value "CS_INPUTVALUE" CS_INT))
