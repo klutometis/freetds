@@ -325,6 +325,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       length) 
      vector))
 
+ (define null-indicator?
+   (foreign-lambda* bool (((c-pointer "CS_SMALLINT") indicator))
+                    "C_return(*indicator == -1);"))
+
  (define (translate-CS_BINARY* context* binary* length)
    (CS_BINARY*->vector binary* length))
  (define translate-CS_LONGBINARY* translate-CS_BINARY*)
@@ -759,22 +763,23 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define (add-param! connection* command* param)
    (let* ((fmt* (make-CS_DATAFMT*))
-          (datalen 1) ;; Currently unused
+          (datalen 1) ;; Only used for char types
           ;; TODO: Figure out a way to make this sane
           (mem* (cond
                  ((string? param)
                   (when (> (string-length param) 255)
                     (error "Cannot store strings > 255 characters!"))
                   (data-format-datatype-set!
-                   fmt* (foreign-value "CS_VARCHAR_TYPE" CS_INT))
+                   fmt* (foreign-value "CS_CHAR_TYPE" CS_INT))
+                  (data-format-max-length-set! fmt* (string-length param))
+                  (set! datalen (string-length param))
                   ((foreign-lambda* c-pointer
-                                    ((c-string s) (int len))
+                                    ((scheme-pointer s) (int len))
                                     "CS_VARCHAR *res;"
-                                    "res = malloc(sizeof(CS_VARCHAR));"
+                                    "res = malloc(sizeof(CS_CHAR) * len);"
                                     "if (res == NULL)"
                                     "  C_return(res);"
-                                    "res->len = len;"
-                                    "memcpy(res->str, s, len);"
+                                    "memcpy(res, s, len);"
                                     "C_return(res);") param (string-length param)))
                  ((fixnum? param)
                   (data-format-datatype-set!
@@ -798,7 +803,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                     "  C_return(res);"
                                     "*res = f;"
                                     "C_return(res);") param))
-                 ((sql-null? param) #t)
+                 ((sql-null? param)
+                  ;; Any value is ok, but if we don't set *something*,
+                  ;; ct_send will complain
+                  (data-format-datatype-set!
+                   fmt* (foreign-value "CS_INT_TYPE" CS_INT))
+                  #t)
                  (else (error "Unknown parameter type" param)))))
      (data-format-name-length-set! fmt* 0) ; All params are nameless
      (data-format-status-set! fmt* (foreign-value "CS_INPUTVALUE" CS_INT))
@@ -816,7 +826,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                          (c-pointer "CS_VOID")
                          CS_INT
                          CS_SMALLINT)
-         command* fmt* mem* datalen (if (sql-null? param) -1 0)))
+         command* fmt* (and (pointer? mem*) mem*) datalen (if (sql-null? param) -1 0)))
       'ct_param
       "failed to add parameter to command"
       command*
@@ -872,7 +882,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                 command*
                 item
                 data-format*
-                buffer*)
+                buffer*
+                indicator*)
    (error-on-non-success
     connection*
     (lambda ()
@@ -889,9 +900,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        data-format*
        buffer*
        #f
-       #f))
+       indicator*))
     'ct_bind
-    "failed to bind statement"))
+    "failed to bind result value"))
 
  (define (command-drop! command*)
    (error-on-non-success
@@ -1037,13 +1048,15 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                 (/ (data-format-max-length
                                     data-format*)
                                    type-size))))
-                             (value* (make-type* length)))
-                        (bind! connection*
-                               command*
-                               (+ column 1)
-                               data-format*
-                               value*)
-                        (cons* value* translate-type* length)))))))))
+                             (value* (make-type* length))
+                             (indicator* (make-CS_SMALLINT* 1)))
+                        (if (bind! connection*
+                                   command*
+                                   (+ column 1)
+                                   data-format*
+                                   value*
+                                   indicator*)
+                            (cons* value* indicator* translate-type* length))))))))))
           ((? command-done?)
            ;; is this appropriate? do we need to deallocate the
            ;; command here?
@@ -1081,11 +1094,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (match retcode
        ((? success? row-fail?)
         (map (lambda (bound-variable)
-               (match-let (((value translate-type* . length)
+               (match-let (((value indicator translate-type* . length)
                             bound-variable))
-                          (translate-type* context*
-                                           value
-                                           length)))
+                          (if (null-indicator? indicator)
+                              (sql-null)
+                              (translate-type* context* value length))))
              bound-variables))
        ((? fail?)
         ;; cancel
