@@ -27,7 +27,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
   result-values
   make-connection
   ;; if we don't export varchar-string, there are compilation errors!
-  varchar-string)
+  varchar-string
+  eor-object?)
  (import scheme
          chicken
          foreign)
