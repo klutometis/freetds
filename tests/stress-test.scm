@@ -1,4 +1,3 @@
-#!/usr/bin/env chicken-scheme
 (use freetds sql-null)
 (define debug print)
 (include "test-freetds-secret.scm")

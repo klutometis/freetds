@@ -7,4 +7,8 @@
          "Peter Bex")
  (synopsis "Bindings for FreeTDS")
  (files "freetds.scm"
-        "freetds.setup"))
+        "freetds.setup"
+	"freetds.meta"
+	"tests/test-freetds-secret-default.scm"
+	"tests/stress-test.scm"
+	"tests/run.scm"))

@@ -29,50 +29,6 @@
   #+END_SRC
 * TODO test cases
   throw in some null strings, too.
-* TODO [#A] determining whether data is NULL
-  should we zero the memory first? maybe it doesn't touch it. never
-  mind; see guide, p. 55:
-
-  #+BEGIN_QUOTE
-  When a row containing NULL values is fetched from a server,
-  Client-Library substitutes specified “null substitution values” for
-  the null columns when copying the row data to program variables.
-
-  #+BEGIN_EXAMPLE
-  Destination type    Null substitution value
-  CS_BINARY_TYPE      Empty array
-  CS_VARBINARY_TYPE   Empty array
-  CS_BIT_TYPE         0
-  CS_CHAR_TYPE        Empty string
-  CS_VARCHAR_TYPE     Empty string
-  CS_DATE_TYPE        4 bytes of zeros
-  CS_DATETIME_TYPE    8 bytes of zeros
-  CS_DATETIME4_TYPE   4 bytes of zeros
-  CS_TINYINT_TYPE     0
-  CS_SMALLINT_TYPE    0
-  CS_INT_TYPE         0
-  CS_DECIMAL_TYPE     0.0 (with default scale and precision)
-  CS_NUMERIC_TYPE     0.0 (with default scale and precision)
-  CS_FLOAT_TYPE       0.0
-  CS_REAL_TYPE        0.0
-  CS_MONEY_TYPE       $0.0
-  CS_MONEY4_TYPE      $0.0
-  CS_BOUNDARY_TYPE    Empty string
-  CS_SENSITIVITY_TYPE Empty string
-  CS_TEXT_TYPE        Empty string
-  CS_TIME_TYPE        4 bytes of zeros
-  CS_IMAGE_TYPE       Empty array
-  #+END_EXAMPLE
-
-  To change null substitution values, an application can call the
-  CS-Library routine =cs_setnull=.
-  #+END_QUOTE
-
-  postgre has a =PQgetisnull=, by the way; and the egg returns
-  =(sql-null)=.
-
-  this is top priority now, unfortunately, especially with dates;
-  which throw an error when NULL.
 * TODO =make-{context, connection, etc.}= -> ={context, connect}=
 * TODO abstract away =context*=?
   no, let's provide it initially; "power users" may yet want to
@@ -100,7 +56,6 @@
   binary(8) column. A nullable timestamp column is semantically
   equivalent to a varbinary(8) column.
   #+END_QUOTE
-* TODO dynamic queries
 * TODO chunking text, images (=ct_get_data=)
 * TODO varbinary
 # <<varbinary>>
@@ -195,6 +150,60 @@
   an extra query every time? is it the case that you have no idea how
   many 0s are significant? i think so. or is it the case that 256
   corresponds to only 4 bytes?
+* TODO Prepared statements
+  This can be done using "ct_dynamic". We may not want to do this if
+  prepared statements can also be done through SQL (not sure). Also,
+  it introduces additional library complexity for something that's rarely
+  absolutely necessary - the overhead is usually in query exection,
+  not planning.
+* DONE dynamic queries
+  This referred to parameterizable queries. Real "ct_dynamic" dynamic
+  queries may be useful to do later; this can create actual prepared
+  statements and return a handle to them.
+* DONE [#A] determining whether data is NULL
+  should we zero the memory first? maybe it doesn't touch it. never
+  mind; see guide, p. 55:
+
+  #+BEGIN_QUOTE
+  When a row containing NULL values is fetched from a server,
+  Client-Library substitutes specified “null substitution values” for
+  the null columns when copying the row data to program variables.
+
+  #+BEGIN_EXAMPLE
+  Destination type    Null substitution value
+  CS_BINARY_TYPE      Empty array
+  CS_VARBINARY_TYPE   Empty array
+  CS_BIT_TYPE         0
+  CS_CHAR_TYPE        Empty string
+  CS_VARCHAR_TYPE     Empty string
+  CS_DATE_TYPE        4 bytes of zeros
+  CS_DATETIME_TYPE    8 bytes of zeros
+  CS_DATETIME4_TYPE   4 bytes of zeros
+  CS_TINYINT_TYPE     0
+  CS_SMALLINT_TYPE    0
+  CS_INT_TYPE         0
+  CS_DECIMAL_TYPE     0.0 (with default scale and precision)
+  CS_NUMERIC_TYPE     0.0 (with default scale and precision)
+  CS_FLOAT_TYPE       0.0
+  CS_REAL_TYPE        0.0
+  CS_MONEY_TYPE       $0.0
+  CS_MONEY4_TYPE      $0.0
+  CS_BOUNDARY_TYPE    Empty string
+  CS_SENSITIVITY_TYPE Empty string
+  CS_TEXT_TYPE        Empty string
+  CS_TIME_TYPE        4 bytes of zeros
+  CS_IMAGE_TYPE       Empty array
+  #+END_EXAMPLE
+
+  To change null substitution values, an application can call the
+  CS-Library routine =cs_setnull=.
+  #+END_QUOTE
+
+  postgre has a =PQgetisnull=, by the way; and the egg returns
+  =(sql-null)=.
+
+  this is top priority now, unfortunately, especially with dates;
+  which throw an error when NULL.
 * DONE fix the fucking memory problems (unusable?)
   CLOSED: [2011-04-11 Mon 19:23]
   - CLOSING NOTE [2011-04-11 Mon 19:24] \\
