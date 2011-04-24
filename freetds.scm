@@ -382,9 +382,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (let ((maximum-number-length (foreign-value "CS_MAX_NUMLEN" int)))
      (let ((positive? (zero? (char->integer (numeric-array numeric* 0))))
            (base-256-digits
-            (cardinality (expt 10 (sub1
-                                   (char->integer
-                                    (numeric-precision numeric*))))
+            (cardinality (expt 10 (char->integer
+                                   (numeric-precision numeric*)))
                          256)))
        (let add ((augend 0) (index 1))
          (if (> index base-256-digits)
