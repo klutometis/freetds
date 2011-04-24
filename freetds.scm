@@ -775,7 +775,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                   (set! datalen (string-length param))
                   ((foreign-lambda* c-pointer
                                     ((scheme-pointer s) (int len))
-                                    "CS_VARCHAR *res;"
+                                    "CS_CHAR *res;"
                                     "res = malloc(sizeof(CS_CHAR) * len);"
                                     "if (res == NULL)"
                                     "  C_return(res);"
@@ -796,7 +796,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                   (data-format-datatype-set!
                    fmt* (foreign-value "CS_FLOAT_TYPE" CS_INT))
                   ((foreign-lambda* c-pointer
-                                    ((float f))
+                                    ((double f))
                                     "CS_FLOAT *res;"
                                     "res = malloc(sizeof(CS_FLOAT));"
                                     "if (res == NULL)"

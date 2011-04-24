@@ -61,7 +61,7 @@
         (call-with-result-set
          connection
          "SELECT ?, ?, ?"
-         0.0, -1.5, 110.12345
+         0.0 -1.5 110.12345
          (lambda (command)
            (test "Float values are written correctly"
                  '((0.0 -1.5 110.12345))
