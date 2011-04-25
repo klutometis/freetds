@@ -38,19 +38,19 @@
          connection
          (conc "SELECT CAST(0.0 AS FLOAT), CAST(-1.5 AS FLOAT), "
                "       CAST(256.0 AS FLOAT), CAST(257.0 AS FLOAT), "
-               "       CAST(0.256 AS FLOAT), CAST(110.12345 AS FLOAT)")
+               "       CAST(0.125 AS FLOAT), CAST(110.0625 AS FLOAT)")
          (lambda (command)
            (test "Float values are retrieved correctly"
-                 '((0.0 -1.5 256.0 257.0 0.256 110.12345))
+                 '((0.0 -1.5 256.0 257.0 0.125 110.0625))
                  (result-values context connection command))))
         (call-with-result-set
          connection
          (conc "SELECT CAST(0.0 AS REAL), CAST(-1.5 AS REAL), "
                "       CAST(256.0 AS REAL), CAST(257.0 AS REAL), "
-               "       CAST(0.256 AS REAL), CAST(110.12345 AS REAL)")
+               "       CAST(0.125 AS REAL), CAST(110.0625 AS REAL)")
          (lambda (command)
            (test "Real values are retrieved correctly"
-                 '((0.0 -1.5 256.0 257.0 0.256 110.12345))
+                 '((0.0 -1.5 256.0 257.0 0.125 110.0625))
                  (result-values context connection command))))
         (call-with-result-set
          connection
