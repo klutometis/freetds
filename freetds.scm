@@ -1083,6 +1083,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                             "ct_results failed, cancelling command"
                             retcode)))))
        ((? end-results?)
+        ;; This is here to work around a bug in FreeTDS (0.82); in some cases,
+        ;; it returns no error code when an invalid query was sent.
+        ;; See http://lists.ibiblio.org/pipermail/freetds/2007q3/022269.html
+        (check-server-errors! result-type connection* 'make-bound-variables)
         (make-eor-object))
        (_
         (freetds-error 'make-bound-variables

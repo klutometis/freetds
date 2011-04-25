@@ -91,7 +91,17 @@
          (lambda (command)
            (test "NULL values are written correctly"
                  (list (list (sql-null) (sql-null)))
-                 (result-values context connection command)))))))))
+                 (result-values context connection command)))))
+      (test-group "misc"
+        (test-error "Error for invalid SQL"
+                    (call-with-result-set
+                     connection "INVALID"
+                     ;; This should be just VOID, but there's a bug
+                     ;; in FreeTDS which causes the error to be
+                     ;; put in the queue but not returned as status.
+                     ;; There's nothing we can do about that.
+                     (lambda (command)
+                       (result-values context connection command)))))))))
 
 (test-end)
 
