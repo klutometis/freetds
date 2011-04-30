@@ -21,10 +21,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
 (module
  freetds
- (call-with-connection
+ (make-connection connection? connection-open? connection-close
   call-with-result-set
   result-values
-  make-connection
   ;; if we don't export varchar-string, there are compilation errors!
   varchar-string
   eor-object?)
@@ -90,6 +89,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        (if (eq? alist-sentinel value)
            (default)
            value)))))
+
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;;; Custom types and FreeTDS<->Scheme type conversion
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
  (define-record eor-object)
  (define-record eod-object)
@@ -541,6 +544,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define (command-succeed? retcode)
    (= retcode (foreign-value "CS_CMD_SUCCEED" CS_INT)))
 
+ ;;;;;;;;;;;;;;;;;;;;;;
+ ;;;; Error handling
+ ;;;;;;;;;;;;;;;;;;;;;;
+
+ ;; TODO: Eventually we won't need to pass a connection pointer anymore
+ ;; but just a normal connection object.  This should make things safe.
  (define (error-on-retcode retcode connection* location message . arguments)
    (when connection*
      (apply check-server-errors! retcode connection* location message arguments)
@@ -609,6 +618,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         (apply freetds-error 'ct_diag "could not retrieve error message" res args)
         (apply freetds-error loc res retcode args))))
 
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;;; Connection management
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
  (define (allocate-connection!)
    (with-retcode-check retcode #f (ct_con_alloc "failed to allocate a connection")
      ((foreign-lambda* (c-pointer "CS_CONNECTION") (((c-pointer "CS_CONTEXT") ctx)
@@ -617,6 +630,15 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        "*res = ct_con_alloc(ctx, &con);"
                        "C_return(con);")
       *app-context* (location retcode))))
+
+ (define (drop-connection! connection*)
+   (error-on-non-success
+    connection*
+    (lambda ()
+      ((foreign-lambda CS_RETCODE "ct_con_drop" (c-pointer "CS_CONNECTION"))
+       connection*))
+    'ct_con_drop
+    "failed to drop connection"))
 
  (define (connection-property connection*
                               action
@@ -700,30 +722,62 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     (format "USE ~a" database)
     (cut result-values *app-context* connection* <>)))
 
- (define make-connection
-   (case-lambda
-    ((host username password)
-     (make-connection host username password #f))
-    ((host username password database)
-     (let ((connection* (allocate-connection!)))
-       (connection-property-set-username! connection* username)
-       (connection-property-set-password! connection* password)
-       (connect! connection* host)
-       (if database (use! connection* database))
-       connection*))))
+ (define-record freetds-connection ptr)
 
- (define (allocate-command! connection*)
-   (with-retcode-check retcode connection* (ct_cmd_alloc "failed to allocate command")
-     ((foreign-lambda* (c-pointer "CS_COMMAND") (((c-pointer "CS_CONNECTION") ctx)
-                                                 ((c-pointer int) res))
-                       "CS_COMMAND *cmd;"
-                       "*res = ct_cmd_alloc(ctx, &cmd);"
-                       "C_return(cmd);")
-      connection* (location retcode))))
+ (define connection? freetds-connection?)
 
- (define (command! connection* command* type buffer* option)
+ (define (make-connection host username password #!optional database)
+   (let ((ptr (allocate-connection!)))
+     (connection-property-set-username! ptr username)
+     (connection-property-set-password! ptr password)
+     (connect! ptr host)
+     (if database (use! ptr database))
+     (let ((connection (make-freetds-connection ptr)))
+       (set-finalizer! connection connection-close)
+       connection)))
+
+ (define (connection-close* connection*)
    (error-on-non-success
-    connection*
+    #f                                  ; Not anymore?
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_close"
+                       (c-pointer "CS_CONNECTION")
+                       CS_INT)
+       connection*
+       ;; TODO: CS_FORCE_CLOSE might be necessary in some cases. Perhaps try
+       ;; graceful disconnect first, and force it only if that fails?
+       (foreign-value "CS_UNUSED" CS_INT)))
+    'connection-close
+    "failed to close connection"))
+
+ (define (connection-close connection)
+   (and-let* ((ptr (freetds-connection-ptr connection)))
+     (connection-close* ptr)
+     (freetds-connection-ptr-set! connection #f) ; Mark as closed
+     (drop-connection! ptr))
+   (void))
+
+ (define (connection-open? connection)
+   (pointer? (freetds-connection-ptr connection)))
+
+ ;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;;; Command management
+ ;;;;;;;;;;;;;;;;;;;;;;;;;
+
+ (define (allocate-command! connection)
+   (let ((connection* (freetds-connection-ptr connection)))
+    (with-retcode-check retcode connection* (ct_cmd_alloc "failed to allocate command")
+      ((foreign-lambda* (c-pointer "CS_COMMAND") (((c-pointer "CS_CONNECTION") ctx)
+                                                  ((c-pointer int) res))
+                        "CS_COMMAND *cmd;"
+                        "*res = ct_cmd_alloc(ctx, &cmd);"
+                        "C_return(cmd);")
+       connection* (location retcode)))))
+
+ (define (command! connection command* type buffer* option)
+   (error-on-non-success
+    (freetds-connection-ptr connection)
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_command"
@@ -741,9 +795,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_command
     (format "failed to issue command ~a" buffer*)))
 
- (define (send! command* connection*)
+ (define (send! command* connection)
    (error-on-non-success
-    connection*
+    (freetds-connection-ptr connection)
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_send"
@@ -752,7 +806,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_send
     "failed to send command"))
 
- (define (add-param! connection* command* param)
+ (define (add-param! connection command* param)
    (let* ((fmt* (make-CS_DATAFMT*))
           (datalen 1) ;; Only used for char types
           ;; TODO: Figure out a way to make this sane
@@ -808,7 +862,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      ;; is cleaned up (but no earlier!) -- it's not a pointer when sql-null
      (when (pointer? mem*) (set-finalizer! command* (lambda (c) (free mem*))))
      (error-on-non-success
-      connection*
+      (freetds-connection-ptr connection)
       (lambda ()
         ((foreign-lambda CS_RETCODE
                          "ct_param"
@@ -823,16 +877,47 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       command*
       param)))
 
- (define (make-command connection* query parameters)
-   (let ((command* (allocate-command! connection*)))
-     (command! connection*
+ (define (make-command connection query parameters)
+   (let ((command* (allocate-command! connection)))
+     (command! connection
                command*
                (foreign-value "CS_LANG_CMD" CS_INT)
                query
                (foreign-value "CS_UNUSED" CS_INT))
-     (for-each (lambda (p) (add-param! connection* command* p)) parameters)
-     (send! command* connection*)
+     (for-each (lambda (p) (add-param! connection command* p)) parameters)
+     (send! command* connection)
      command*))
+
+ (define (command-drop! command*)
+   (error-on-non-success
+    #f
+    (lambda ()
+      ((foreign-lambda CS_RETCODE
+                       "ct_cmd_drop"
+                       (c-pointer "CS_COMMAND"))
+       command*))
+    'ct_cmd_drop
+    "failed to drop command"))
+
+ (define cancel!
+   (case-lambda
+    ((connection* command*)
+     (cancel! connection*
+              command*
+              (foreign-value "CS_CANCEL_ALL" CS_INT)))
+    ((connection* command* type)
+     ((foreign-lambda CS_RETCODE
+                      "ct_cancel"
+                      (c-pointer "CS_CONNECTION")
+                      (c-pointer "CS_COMMAND")
+                      CS_INT)
+      connection*
+      command*
+      type))))
+
+ ;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;;; Result processing
+ ;;;;;;;;;;;;;;;;;;;;;;;;;
 
  (define (results! connection* command*)
    (let-location ((rettype CS_INT))
@@ -895,28 +980,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_bind
     "failed to bind result value"))
 
- (define (command-drop! command*)
-   (error-on-non-success
-    #f
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_cmd_drop"
-                       (c-pointer "CS_COMMAND"))
-       command*))
-    'ct_cmd_drop
-    "failed to drop command"))
-
- (define (connection-close! connection*)
-   (error-on-non-success
-    connection*
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_con_drop"
-                       (c-pointer "CS_CONNECTION"))
-       connection*))
-    'ct_con_drop
-    "failed to close connection"))
-
  (define (fetch! command*)
    (let-location ((retcode CS_INT))
      (let* ((fetch* (foreign-lambda* CS_INT (((c-pointer "CS_COMMAND") cmd)
@@ -928,41 +991,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
             (rows-read (fetch* command* (location retcode))))
        (values rows-read retcode))))
 
- (define cancel!
-   (case-lambda
-    ((connection* command*)
-     (cancel! connection*
-              command*
-              (foreign-value "CS_CANCEL_ALL" CS_INT)))
-    ((connection* command* type)
-     ((foreign-lambda CS_RETCODE
-                      "ct_cancel"
-                      (c-pointer "CS_CONNECTION")
-                      (c-pointer "CS_COMMAND")
-                      CS_INT)
-      connection*
-      command*
-      type))))
-
- (define close!
-   (case-lambda
-    ((connection*)
-     (close! connection* (foreign-value "CS_FORCE_CLOSE" CS_INT)))
-    ((connection* option)
-     (error-on-non-success
-      #f ; Not anymore?
-      (lambda ()
-        ((foreign-lambda CS_RETCODE
-                         "ct_close"
-                         (c-pointer "CS_CONNECTION")
-                         CS_INT)
-         connection*
-         option))
-      'ct_close
-      "failed to close connection"))))
-
- (define (make-bound-variables connection* command*)
-   (let-values (((result-status result-type) (results! connection* command*)))
+ (define (make-bound-variables connection command*)
+   (let*-values (((connection*) (freetds-connection-ptr connection))
+                 ((result-status result-type) (results! connection* command*)))
      (match result-status
        ((? success?)
         (match result-type
@@ -1040,7 +1071,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         (let ((retcode (cancel! connection* command*)))
           (match retcode
             ((? fail?)
-             (close! connection*)
+             (connection-close connection)
              (freetds-error 'make-bound-variables
                             (string-append "ct_results and ct_cancel failed, "
                                            "prompting the connection to close")
@@ -1084,8 +1115,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        "fetch! returned unknown retcode"
                        retcode)))))
 
- (define (result-values connection* command*)
-   (let ((bound-variables (make-bound-variables connection* command*)))
+ (define (result-values connection command*)
+   (let ((bound-variables (make-bound-variables connection command*)))
      (if (eor-object? bound-variables)
          bound-variables
          (let next ((results '()))
@@ -1094,12 +1125,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                  results
                  (next (cons row results))))))))
 
- (define (call-with-result-set connection* query . rest-args)
+ (define (call-with-result-set connection query . rest-args)
    ;; TODO: This is not too efficient
    (receive (params last)
      (split-at rest-args (sub1 (length rest-args)))
      (let* ((process-command (car last))
-            (command* (make-command connection* query params)))
+            (command* (make-command connection query params)))
        (dynamic-wind
            void
            (lambda () (process-command command*))
@@ -1108,15 +1139,4 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
              ;; reusable.
              (cancel! (null-pointer) command*)
              (command-drop! command*))))))
-
- (define call-with-connection
-   (case-lambda
-    ((server username password process-connection)
-     (call-with-connection server username password #f process-connection))
-    ((server username password database process-connection)
-     (let ((connection* (make-connection server username password database)))
-       (dynamic-wind
-           void
-           (lambda () (process-connection connection*))
-           (lambda ()
-             (connection-close! connection*))))))))
+)
