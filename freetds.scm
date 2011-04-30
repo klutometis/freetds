@@ -21,8 +21,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
 (module
  freetds
- (call-with-context
-  call-with-connection
+ (call-with-connection
   call-with-result-set
   result-values
   make-connection
@@ -45,6 +44,40 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       foof-loop
       sql-null)
 
+ (foreign-declare "#include <ctpublic.h>")
+
+ (define-foreign-type CS_CHAR char)
+ (define-foreign-type CS_INT integer32)
+ (define-foreign-type CS_UINT unsigned-integer32)
+ (define-foreign-type CS_SMALLINT short)
+ (define-foreign-type CS_RETCODE CS_INT)
+
+;; Create a global application context upon library load.  Contexts
+;; aren't really used for anything, except a couple of properties and
+;; other global settings.  FreeTDS doesn't impose a limit of
+;; connections per context like Sybase's library does, so there's no
+;; need to maintain separate contexts.  If necessary, we can always
+;; decide to move context into the connection maintenance procedures.
+;; This should be completely transparent, so it won't break backwards
+;; compatibility.
+(define *app-context*
+  (let ((ctx ((foreign-lambda* (c-pointer "CS_CONTEXT") ()
+                               "CS_CONTEXT *ctx;"
+                               "if (cs_ctx_alloc(CS_VERSION_100, &ctx) != CS_SUCCEED)"
+                               "    C_return(NULL);"
+                               "if (ct_init(ctx, CS_VERSION_100) != CS_SUCCEED) {"
+                               "    cs_ctx_drop(ctx);"
+                               "    C_return(NULL);"
+                               "}"
+                               "C_return(ctx);"))))
+    (unless ctx (error (conc "Could not allocate and initialize FreeTDS context! "
+                             "This should never happen.  Out of memory?")))
+    (on-exit (lambda ()
+               ((foreign-lambda* void (((c-pointer "CS_CONTEXT") ctx))
+                                 "if (ct_exit(ctx, CS_FORCE_EXIT) == CS_SUCCEED)"
+                                 "    cs_ctx_drop(ctx);") ctx)))
+    ctx))
+
  (define alist-ref/default
    (case-lambda
     ((key alist)
@@ -60,14 +93,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define-record eor-object)
  (define-record eod-object)
-
- (foreign-declare "#include <ctpublic.h>")
-
- (define-foreign-type CS_CHAR char)
- (define-foreign-type CS_INT integer32)
- (define-foreign-type CS_UINT unsigned-integer32)
- (define-foreign-type CS_SMALLINT short)
- (define-foreign-type CS_RETCODE CS_INT)
 
  (define-syntax define-make-type*
    (er-macro-transformer
@@ -272,7 +297,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
           "C_return(vector[i]);") vector i))
       max-length))))
 
- (define (CS_DATETIME*->srfi-19-date context* datetime* type)
+ (define (CS_DATETIME*->srfi-19-date datetime* type)
    (let ((daterec* (make-CS_DATEREC*)))
      (error-on-non-success
       #f
@@ -283,7 +308,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                          CS_INT
                          (c-pointer "CS_VOID")
                          (c-pointer "CS_DATEREC"))
-         context*
+         *app-context*
          type
          datetime*
          daterec*))
@@ -330,10 +355,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (foreign-lambda* bool (((c-pointer "CS_SMALLINT") indicator))
                     "C_return(*indicator == -1);"))
 
- (define (translate-CS_BINARY* context* binary* length)
+ (define (translate-CS_BINARY* binary* length)
    (CS_BINARY*->vector binary* length))
  (define translate-CS_LONGBINARY* translate-CS_BINARY*)
- (define (translate-CS_VARBINARY* context* varbinary* length)
+ (define (translate-CS_VARBINARY* varbinary* length)
    ;; (debug length (varbinary-length varbinary*))
    ;; can't seems to retrieve a pointer to the beginning of the array
    ;; with object->pointer; resorting, therefore, to
@@ -348,37 +373,35 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (CS_BINARY*->vector varbinary*
                        256))
 ;;; boolean transformation?
- (define (translate-CS_BIT* context* bit* length)
+ (define (translate-CS_BIT* bit* length)
    (not (zero? (CS_INT*->number bit* "CS_BIT" short))))
- (define (translate-CS_CHAR* context* char* length)
+ (define (translate-CS_CHAR* char* length)
    (CS_CHAR*->string char* length))
  (define translate-CS_LONGCHAR*
    translate-CS_CHAR*)
- (define (translate-CS_VARCHAR* context* varchar* length)
+ (define (translate-CS_VARCHAR* varchar* length)
    (CS_CHAR*->string (varchar-string varchar*)
                      (varchar-length varchar*)))
- (define (translate-CS_DATETIME* context* datetime* length)
+ (define (translate-CS_DATETIME* datetime* length)
    (CS_DATETIME*->srfi-19-date
-    context*
     datetime*
     (foreign-value "CS_DATETIME_TYPE" CS_INT)))
- (define (translate-CS_DATETIME4* context* datetime4* length)
+ (define (translate-CS_DATETIME4* datetime4* length)
    (CS_DATETIME*->srfi-19-date
-    context*
     datetime4*
     (foreign-value "CS_DATETIME4_TYPE" CS_INT)))
- (define (translate-CS_TINYINT* context* tinyint* length)
+ (define (translate-CS_TINYINT* tinyint* length)
    (CS_INT*->number tinyint* "CS_TINYINT" short))
- (define (translate-CS_SMALLINT* context* smallint* length)
+ (define (translate-CS_SMALLINT* smallint* length)
    (CS_INT*->number smallint* "CS_SMALLINT" short))
- (define (translate-CS_INT* context* int* length)
+ (define (translate-CS_INT* int* length)
    (CS_INT*->number int* "CS_INT" integer32))
- (define (translate-CS_BIGINT* context* bigint* length)
+ (define (translate-CS_BIGINT* bigint* length)
    (CS_INT*->number bigint* "CS_BIGINT" integer64))
  (define (cardinality integer base)
    (loop ((for power (up-from 0))
           (until (> (expt base power) integer))) => power))
- (define (translate-CS_NUMERIC* context* numeric* length)
+ (define (translate-CS_NUMERIC* numeric* length)
    (let ((maximum-number-length (foreign-value "CS_MAX_NUMLEN" int)))
      (let ((positive? (zero? (char->integer (numeric-array numeric* 0))))
            (base-256-digits
@@ -400,25 +423,25 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                            (* base (expt 256 (- base-256-digits index))))))
                   (+ index 1)))))))
  (define translate-CS_DECIMAL* translate-CS_NUMERIC*)
- (define (translate-CS_FLOAT* context* float* length)
+ (define (translate-CS_FLOAT* float* length)
    ((foreign-safe-lambda*
      double
      (((c-pointer "CS_FLOAT") n))
      "C_return((double) *n);")
     float*))
- (define (translate-CS_REAL* context* real* length)
+ (define (translate-CS_REAL* real* length)
    ((foreign-safe-lambda*
      float
      (((c-pointer "CS_REAL") n))
      "C_return((float) *n);")
     real*))
- (define (translate-CS_MONEY* context* money* length)
+ (define (translate-CS_MONEY* money* length)
    (inexact->exact
     (+ (* (money-high money*) (expt 2 32))
        (money-low money*))))
- (define (translate-CS_MONEY4* context* small-money* length)
+ (define (translate-CS_MONEY4* small-money* length)
    (small-money-value small-money*))
- (define (translate-CS_TEXT* context* text* length)
+ (define (translate-CS_TEXT* text* length)
    (CS_CHAR*->string text* length))
  (define translate-CS_IMAGE* translate-CS_TEXT*)
 
@@ -586,46 +609,14 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         (apply freetds-error 'ct_diag "could not retrieve error message" res args)
         (apply freetds-error loc res retcode args))))
 
- (define (allocate-context! version)
-   (with-retcode-check retcode #f (cs_ctx_alloc "failed to allocate context")
-     ((foreign-lambda* (c-pointer "CS_CONTEXT") ((CS_INT version)
-                                                 ((c-pointer int) res))
-                       "CS_CONTEXT *p;"
-                       "*res = cs_ctx_alloc(version, &p);"
-                       "C_return(p);")
-      version (location retcode))))
-
- (define (initialize-context! context* version)
-   (error-on-non-success
-    #f
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_init"
-                       (c-pointer "CS_CONTEXT")
-                       CS_INT)
-       context*
-       version))
-    'ct_init
-    "failed to initialize context"))
-
- (define make-context
-   (case-lambda
-    (()
-     (let ((version (foreign-value "CS_VERSION_100" CS_INT)))
-       (make-context version)))
-    ((version)
-     (let ((context* (allocate-context! version)))
-       (initialize-context! context* version)
-       context*))))
-
- (define (allocate-connection! context*)
+ (define (allocate-connection!)
    (with-retcode-check retcode #f (ct_con_alloc "failed to allocate a connection")
      ((foreign-lambda* (c-pointer "CS_CONNECTION") (((c-pointer "CS_CONTEXT") ctx)
                                                     ((c-pointer int) res))
                        "CS_CONNECTION *con;"
                        "*res = ct_con_alloc(ctx, &con);"
                        "C_return(con);")
-      context* (location retcode))))
+      *app-context* (location retcode))))
 
  (define (connection-property connection*
                               action
@@ -702,23 +693,23 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_connect
     "could not initialize error handling"))
 
- (define (use! context* connection* database)
+ (define (use! connection* database)
    (call-with-result-set
     connection*
     ;; needs to be escaped!
     (format "USE ~a" database)
-    (cut result-values context* connection* <>)))
+    (cut result-values *app-context* connection* <>)))
 
  (define make-connection
    (case-lambda
-    ((context* host username password)
-     (make-connection context* host username password #f))
-    ((context* host username password database)
-     (let ((connection* (allocate-connection! context*)))
+    ((host username password)
+     (make-connection host username password #f))
+    ((host username password database)
+     (let ((connection* (allocate-connection!)))
        (connection-property-set-username! connection* username)
        (connection-property-set-password! connection* password)
        (connect! connection* host)
-       (if database (use! context* connection* database))
+       (if database (use! connection* database))
        connection*))))
 
  (define (allocate-command! connection*)
@@ -926,30 +917,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_con_drop
     "failed to close connection"))
 
- (define (context-exit! context*)
-   (error-on-non-success
-    #f
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_exit"
-                       (c-pointer "CS_CONTEXT")
-                       CS_INT)
-       context*
-       (foreign-value "CS_UNUSED" int)))
-    'ct_exit
-    "failed to exit context"))
-
- (define (context-drop! context*)
-   (error-on-non-success
-    #f
-    (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "cs_ctx_drop"
-                       (c-pointer "CS_CONTEXT"))
-       context*))
-    'cs_ctx_drop
-    "failed to drop context"))
-
  (define (fetch! command*)
    (let-location ((retcode CS_INT))
      (let* ((fetch* (foreign-lambda* CS_INT (((c-pointer "CS_COMMAND") cmd)
@@ -1093,7 +1060,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        "ct_results returned a bizarre result status"
                        result-status)))))
 
- (define (row-fetch context* command* bound-variables)
+ (define (row-fetch command* bound-variables)
    (let-values (((rows-read retcode) (fetch! command*)))
      (match retcode
        ((? success? row-fail?)
@@ -1102,7 +1069,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                             bound-variable))
                           (if (null-indicator? indicator)
                               (sql-null)
-                              (translate-type* context* value length))))
+                              (translate-type* value length))))
              bound-variables))
        ((? fail?)
         ;; cancel
@@ -1117,12 +1084,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        "fetch! returned unknown retcode"
                        retcode)))))
 
- (define (result-values context* connection* command*)
+ (define (result-values connection* command*)
    (let ((bound-variables (make-bound-variables connection* command*)))
      (if (eor-object? bound-variables)
          bound-variables
          (let next ((results '()))
-           (let ((row (row-fetch context* command* bound-variables)))
+           (let ((row (row-fetch command* bound-variables)))
              (if (eod-object? row)
                  results
                  (next (cons row results))))))))
@@ -1142,30 +1109,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
              (cancel! (null-pointer) command*)
              (command-drop! command*))))))
 
- (define (call-with-context process-context)
-   (let ((context* (make-context)))
-     (dynamic-wind
-         void
-         (lambda () (process-context context*))
-         (lambda ()
-           (context-exit! context*)
-           (context-drop! context*)))))
-
  (define call-with-connection
    (case-lambda
-    ((context* server username password process-connection)
-     (call-with-connection context*
-                           server
-                           username
-                           password
-                           #f
-                           process-connection))
-    ((context* server username password database process-connection)
-     (let ((connection* (make-connection context*
-                                         server
-                                         username
-                                         password
-                                         database)))
+    ((server username password process-connection)
+     (call-with-connection server username password #f process-connection))
+    ((server username password database process-connection)
+     (let ((connection* (make-connection server username password database)))
        (dynamic-wind
            void
            (lambda () (process-connection connection*))
