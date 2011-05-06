@@ -1,6 +1,6 @@
 |#
 
-Copyright 1999 Response Genetics, Inc.
+Copyright 2011 Response Genetics, Inc.
 
 This file is part of the FreeTDS egg.
 
@@ -26,7 +26,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
   result-values
   ;; if we don't export varchar-string, there are compilation errors!
   varchar-string
-  eor-object?)
+  eor-object?
+  call-with-connection)
  (import scheme
          chicken
          foreign)
@@ -715,12 +716,13 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_connect
     "could not initialize error handling"))
 
- (define (use! connection* database)
+ (define (use! connection database)
    (call-with-result-set
-    connection*
+    connection
     ;; needs to be escaped!
     (format "USE ~a" database)
-    (cut result-values *app-context* connection* <>)))
+    (lambda (result-set)
+      (result-values connection result-set))))
 
  (define-record freetds-connection ptr)
 
@@ -731,8 +733,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (connection-property-set-username! ptr username)
      (connection-property-set-password! ptr password)
      (connect! ptr host)
-     (if database (use! ptr database))
      (let ((connection (make-freetds-connection ptr)))
+       (if database (use! connection database))
        (set-finalizer! connection connection-close)
        connection)))
 
@@ -757,6 +759,21 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (freetds-connection-ptr-set! connection #f) ; Mark as closed
      (drop-connection! ptr))
    (void))
+
+ (define call-with-connection
+   (case-lambda
+    ((host username password procedure)
+     (call-with-connection host username password #f procedure))
+    ((host username password database procedure)
+     (let ((connection #f))
+       (dynamic-wind
+           (lambda ()
+             (set! connection
+                   (make-connection host username password database)))
+           (lambda ()
+             (procedure connection))
+           (lambda ()
+             (connection-close connection)))))))
 
  (define (connection-open? connection)
    (pointer? (freetds-connection-ptr connection)))
