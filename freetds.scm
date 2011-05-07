@@ -34,15 +34,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (import-for-syntax matchable)
 
- (use lolevel
-      matchable
-      srfi-1
-      srfi-4
-      srfi-19
-      foreigners
-      data-structures
-      foof-loop
-      sql-null)
+ (use lolevel srfi-1 srfi-4 data-structures
+      foreigners srfi-19 matchable foof-loop sql-null)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -81,9 +74,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define alist-ref/default
    (case-lambda
     ((key alist)
-     (alist-ref/default key
-                        alist
-                        (lambda () (error "could not find key" key alist))))
+     (alist-ref/default key alist (lambda ()
+                                    (error "could not find key" key alist))))
     ((key alist default)
      (let* ((alist-sentinel (cons #f #f))
             (value (alist-ref key alist eqv? alist-sentinel)))
@@ -336,23 +328,16 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       (match-let (((_ int* type return-type) expression))
         (let ((%foreign-safe-lambda*
                (rename 'foreign-safe-lambda*)))
-          `((,%foreign-safe-lambda*
-             ,return-type
-             (((c-pointer ,type) i))
-             "C_return((int) *i);")
-            ,int*))))))
+          `((,%foreign-safe-lambda* ,return-type (((c-pointer ,type) i))
+                                    "C_return((int) *i);") ,int*))))))
 
  (define (CS_BINARY*->vector binary* length)
    (let ((vector (make-u8vector length 0)))
-     ((foreign-safe-lambda*
-       void
-       (((c-pointer "CS_BINARY") from)
-        (u8vector to)
-        (int length))
-       "memcpy(to, from, length * sizeof(CS_BINARY));")
-      binary*
-      vector
-      length) 
+     ((foreign-safe-lambda* void (((c-pointer "CS_BINARY") from)
+                                  (u8vector to)
+                                  (int length))
+                            "memcpy(to, from, length * sizeof(CS_BINARY));")
+      binary* vector length)
      vector))
 
  (define null-indicator?
@@ -641,57 +626,67 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_con_drop
     "failed to drop connection"))
 
- (define (connection-property connection*
-                              action
-                              property
-                              buffer
-                              buffer-length
+ (define (connection-property connection* action property
+                              buffer buffer-length
                               out-length*)
    (error-on-non-success
     connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_con_props"
-                       (c-pointer "CS_CONNECTION")
-                       CS_INT
-                       CS_INT
-                       scheme-pointer
-                       CS_INT
-                       (c-pointer "CS_INT"))
-       connection*
-       action
-       property
-       buffer
-       buffer-length
-       out-length*))
+                       (c-pointer "CS_CONNECTION") CS_INT CS_INT
+                       scheme-pointer CS_INT (c-pointer "CS_INT"))
+       connection* action property buffer buffer-length out-length*))
     'ct_con_props
     (format "failed to perform ~a on the property ~a" action property)))
 
- (define (connection-property-set! connection*
-                                   property
-                                   buffer
-                                   buffer-length
-                                   out-length*)
-   (connection-property connection*
-                        (foreign-value "CS_SET" CS_INT)
-                        property
-                        buffer
-                        buffer-length
-                        out-length*))
+ (define (connection-property-set! connection* property value)
+   (let ((set-prop! (lambda (buf len)
+                      (connection-property connection*
+                                           (foreign-value "CS_SET" CS_INT)
+                                           property buf len (null-pointer)))))
+     ;; Readonly: CS_CHARSETCNV, CS_CON_STATUS, CS_EED_CMD, CS_ENDPOINT,
+     ;;           CS_LOGIN_STATUS, CS_NOTIF_CMD, CS_PARENT_HANDLE,
+     ;;           CS_SERVERNAME,
+     ;;
+     ;; Handled:
+     ;;  - boolean: CS_ANSI_BINDS, CS_ASYNC_NOTIFS, CS_BULK_LOGIN,
+     ;;             CS_DIAG_TIMEOUT, CS_DISABLE_POLL, CS_EXPOSE_FMTS,
+     ;;             CS_EXTRA_INF, CS_HIDDEN_KEYS, CS_SEC_APPDEFINED,
+     ;;             CS_SEC_CHALLENGE, CS_SEC_ENCRYPTION, CS_SEC_NEGOTIATE
+     ;; - string: CS_HOSTNAME, CS_PASSWORD, CS_TRANSACTION_NAME, CS_USERNAME
+     ;;
+     ;; Not handled:
+     ;; - CS_LOC_PROPERTY needs a CS_LOCALE property (only before connecting)
+     ;; - CS_NETIO needs CS_SYNC_IO or CS_ASYNC_IO
+     ;; - CS_PACKETSIZE needs an integer value (only before connecting)
+     ;; - CS_TDS_VERSION needs a "symbolic version level"
+     ;; - CS_TEXTLIMIT needs an integer value
+     ;; - CS_USERDATA needs "user-allocated data" but we don't need it
+     ;;
+     ;; TODO: Instead of dispatching on type we should probably dispatch on
+     ;;       property.  This ensures safety and also handles those strange
+     ;;       cases CS_LOC_PROPERTY, CS_NETIO, CS_TDS_VERSION (and CS_USERDATA)
+     ;;       It could make the API more Schemely by getting rid of the need to
+     ;;       pass foreign property values, so we can use it from the REPL.
+     (cond ((string? value)   (set-prop! value (string-length value)))
+           ((boolean? value)  (set-prop! (if value
+                                             (foreign-value "CS_TRUE" CS_INT)
+                                             (foreign-value "CS_FALSE" CS_INT))
+                                         (foreign-value "CS_UNUSED" CS_INT)))
+           ((fixnum? value)   (set-prop! value
+                                         (foreign-value "CS_UNUSED" CS_INT)))
+           #;((u8vector? value) (set-prop! value (u8vector-length value)))
+           #;((blob? value)     (set-prop! value (blob-size value)))
+           (else (error "Unrecognized property value type" property value)))))
 
  (define (connection-property-set-username! connection* username)
    (connection-property-set! connection*
-                             (foreign-value "CS_USERNAME" CS_INT)
-                             username
-                             (string-length username)
-                             (null-pointer)))
+                             (foreign-value "CS_USERNAME" CS_INT) username))
 
  (define (connection-property-set-password! connection* password)
    (connection-property-set! connection*
-                             (foreign-value "CS_PASSWORD" CS_INT)
-                             password
-                             (string-length password)
-                             (null-pointer)))
+                             (foreign-value "CS_PASSWORD" CS_INT) password))
 
  (define (connect! connection* server)
    (error-on-non-success
@@ -778,9 +773,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define (connection-open? connection)
    (pointer? (freetds-connection-ptr connection)))
 
- ;;;;;;;;;;;;;;;;;;;;;;;;;
- ;;;; Command management
- ;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;;;; Command/query management
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
  (define (allocate-command! connection)
    (let ((connection* (freetds-connection-ptr connection)))
@@ -796,30 +791,18 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (error-on-non-success
     (freetds-connection-ptr connection)
     (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_command"
-                       (c-pointer "CS_COMMAND")
-                       CS_INT
-                       ;; (const (c-pointer "CS_VOID"))
-                       (const c-string)
-                       CS_INT
-                       CS_INT)
-       command*
-       type
-       buffer*
-       (foreign-value "CS_NULLTERM" CS_INT)
-       option))
+      ((foreign-lambda CS_RETCODE "ct_command" (c-pointer "CS_COMMAND")
+                       CS_INT #;(const (c-pointer "CS_VOID"))
+                       (const c-string) CS_INT CS_INT)
+       command* type buffer* (foreign-value "CS_NULLTERM" CS_INT) option))
     'ct_command
-    (format "failed to issue command ~a" buffer*)))
+    (format "could not create command structure for \"~a\"" buffer*)))
 
  (define (send! command* connection)
    (error-on-non-success
     (freetds-connection-ptr connection)
     (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_send"
-                       (c-pointer "CS_COMMAND"))
-       command*))
+      ((foreign-lambda CS_RETCODE "ct_send" (c-pointer "CS_COMMAND")) command*))
     'ct_send
     "failed to send command"))
 
@@ -928,9 +911,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                       (c-pointer "CS_CONNECTION")
                       (c-pointer "CS_COMMAND")
                       CS_INT)
-      connection*
-      command*
-      type))))
+      connection* command* type))))
 
  ;;;;;;;;;;;;;;;;;;;;;;;;;
  ;;;; Result processing
@@ -962,12 +943,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_describe"
-                       (c-pointer "CS_COMMAND")
-                       CS_INT
-                       (c-pointer "CS_DATAFMT"))
-       command*
-       item
-       data-format*))
+                       (c-pointer "CS_COMMAND") CS_INT (c-pointer "CS_DATAFMT"))
+       command* item data-format*))
     'ct_describe
     "failed to describe column"))
 
@@ -982,12 +959,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_bind"
-                       (c-pointer "CS_COMMAND")
-                       CS_INT
-                       (c-pointer "CS_DATAFMT")
-                       (c-pointer "CS_VOID")
-                       (c-pointer "CS_INT")
-                       (c-pointer "CS_SMALLINT"))
+                       (c-pointer "CS_COMMAND") CS_INT
+                       (c-pointer "CS_DATAFMT") (c-pointer "CS_VOID")
+                       (c-pointer "CS_INT")     (c-pointer "CS_SMALLINT"))
        command*
        item
        data-format*
@@ -1023,14 +997,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
               column-count
               (lambda (column)
                 (let ((data-format* (make-CS_DATAFMT*)))
-                  (describe! connection*
-                             command*
-                             (add1 column)
-                             data-format*)
+                  (describe! connection* command* (add1 column) data-format*)
                   ;; let's have a table here for modifying,
                   ;; if necessary, the data-format*.
-                  (let ((datatype
-                         (data-format-datatype data-format*)))
+                  (let ((datatype (data-format-datatype data-format*)))
                     (select datatype
                             (((foreign-value "CS_CHAR_TYPE" CS_INT)
                               (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
@@ -1044,33 +1014,21 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                              (data-format-format-set!
                               data-format*
                               (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
-                    (let ((make-type*
-                           (alist-ref/default
-                            datatype
-                            datatype->make-type*))
-                          (type-size
-                           (alist-ref/default
-
-                            datatype
-                            datatype->type-size))
-                          (translate-type*
-                           (alist-ref/default
-                            datatype
-                            datatype->translate-type*)))
-                      (let* ((length
-                              (inexact->exact
-                               (ceiling
-                                (/ (data-format-max-length
-                                    data-format*)
-                                   type-size))))
+                    (let ((make-type* (alist-ref/default datatype
+                                                         datatype->make-type*))
+                          (type-size (alist-ref/default datatype
+                                                        datatype->type-size))
+                          (translate-type* (alist-ref/default
+                                            datatype
+                                            datatype->translate-type*)))
+                      (let* ((length (inexact->exact
+                                      (ceiling
+                                       (/ (data-format-max-length data-format*)
+                                          type-size))))
                              (value* (make-type* length))
                              (indicator* (make-CS_SMALLINT* 1)))
-                        (if (bind! connection*
-                                   command*
-                                   (+ column 1)
-                                   data-format*
-                                   value*
-                                   indicator*)
+                        (if (bind! connection* command* (+ column 1)
+                                   data-format* value* indicator*)
                             (cons* value* indicator* translate-type* length))))))))))
           ((? command-done?)
            ;; is this appropriate? do we need to deallocate the
@@ -1128,9 +1086,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        ((? end-data?)
         (make-eod-object))
        (_
-        (freetds-error 'row-fetch
-                       "fetch! returned unknown retcode"
-                       retcode)))))
+        (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
  (define (result-values connection command*)
    (let ((bound-variables (make-bound-variables connection command*)))
