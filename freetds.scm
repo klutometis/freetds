@@ -89,7 +89,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
  (define-record eor-object)
- (define-record eod-object)
 
  (define-syntax define-make-type*
    (er-macro-transformer
@@ -1108,8 +1107,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         (freetds-error 'row-fetch
                        "fetch! returned CS_FAIL"
                        retcode))
-       ((? end-data?)
-        (make-eod-object))
+       ((? end-data?) #f)
        (_
         (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
@@ -1119,7 +1117,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
          bound-variables
          (let next ((results '()))
            (let ((row (row-fetch command* bound-variables)))
-             (if (eod-object? row)
+             (if (not row)
                  results
                  (next (cons row results))))))))
 
