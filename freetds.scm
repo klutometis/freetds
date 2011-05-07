@@ -22,6 +22,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 (module
  freetds
  (make-connection connection? connection-open? connection-close
+  send-query send-query*
   call-with-result-set
   result-values
   ;; if we don't export varchar-string, there are compilation errors!
@@ -877,7 +878,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       command*
       param)))
 
- (define (make-command connection query parameters)
+ ;; Convenience wrapper
+ (define (send-query connection query . parameters)
+   (apply send-query* connection query parameters))
+
+ (define (send-query* connection query parameters)
    (let ((command* (allocate-command! connection)))
      (command! connection
                command*
@@ -962,12 +967,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        (c-pointer "CS_COMMAND") CS_INT
                        (c-pointer "CS_DATAFMT") (c-pointer "CS_VOID")
                        (c-pointer "CS_INT")     (c-pointer "CS_SMALLINT"))
-       command*
-       item
-       data-format*
-       buffer*
-       #f
-       indicator*))
+       command* item data-format* buffer* #f indicator*))
     'ct_bind
     "failed to bind result value"))
 
@@ -1103,7 +1103,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (receive (params last)
      (split-at rest-args (sub1 (length rest-args)))
      (let* ((process-command (car last))
-            (command* (make-command connection query params)))
+            (command* (send-query* connection query params)))
        (dynamic-wind
            void
            (lambda () (process-command command*))
