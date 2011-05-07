@@ -666,9 +666,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_con_props
     (format "failed to perform ~a on the property ~a" action property)))
 
- (define (connection-property-set! connection* property value)
+ (define (connection-property-set! connection property value)
    (let ((set-prop! (lambda (buf len)
-                      (connection-property connection*
+                      (connection-property (freetds-connection-ptr connection)
                                            (foreign-value "CS_SET" CS_INT)
                                            property buf len (null-pointer)))))
      ;; Readonly: CS_CHARSETCNV, CS_CON_STATUS, CS_EED_CMD, CS_ENDPOINT,
@@ -706,17 +706,17 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
            #;((blob? value)     (set-prop! value (blob-size value)))
            (else (error "Unrecognized property value type" property value)))))
 
- (define (connection-property-set-username! connection* username)
-   (connection-property-set! connection*
+ (define (connection-property-set-username! connection username)
+   (connection-property-set! connection
                              (foreign-value "CS_USERNAME" CS_INT) username))
 
- (define (connection-property-set-password! connection* password)
-   (connection-property-set! connection*
+ (define (connection-property-set-password! connection password)
+   (connection-property-set! connection
                              (foreign-value "CS_PASSWORD" CS_INT) password))
 
  (define (connect! connection* server)
    (error-on-non-success
-    #f ; Not yet!
+    connection*
     (lambda ()
       ((foreign-lambda CS_RETCODE
                        "ct_connect"
@@ -751,12 +751,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define (make-connection host username password #!optional database)
    (let ((ptr (allocate-connection!)))
-     (connection-property-set-username! ptr username)
-     (connection-property-set-password! ptr password)
-     (connect! ptr host)
      (let ((connection (make-freetds-connection ptr)))
-       (if database (use! connection database))
+       (connection-property-set-username! connection username)
+       (connection-property-set-password! connection password)
+       (connect! ptr host)
        (set-finalizer! connection connection-close)
+       (when database (use! connection database))
        connection)))
 
  (define (connection-close* connection*)
