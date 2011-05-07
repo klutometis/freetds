@@ -737,12 +737,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     "could not initialize error handling"))
 
  (define (use! connection database)
-   (call-with-result-set
-    connection
-    ;; needs to be escaped!
-    (format "USE ~a" database)
-    (lambda (result-set)
-      (result-values connection result-set))))
+   (result-cleanup!                     ; premature optimization? ;)
+    (send-query connection
+                ;; needs to be escaped!
+                (format "USE ~a" database))))
 
  (define-record freetds-connection ptr)
 
@@ -904,9 +902,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  ;; Convenience wrapper
  (define (send-query connection query . parameters)
-   (apply send-query* connection query parameters))
+   (send-query* connection query parameters))
 
  (define (send-query* connection query parameters)
+   ;; Only one command at a time is allowed, so we need to cancel any
+   ;; commands there may be pending.
+   (cancel! connection)
    (let ((command* (allocate-command! connection)))
      (command! connection
                command*
@@ -915,9 +916,13 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                (foreign-value "CS_UNUSED" CS_INT))
      (for-each (lambda (p) (add-param! connection command* p)) parameters)
      (send! command* connection)
-     command*))
+     ;; TODO: Memory leak when send! or add-param! fails
+     (let* ((bound-vars (consume-results-and-bind-variables connection command*))
+            (result (make-freetds-result command* bound-vars)))
+       (set-finalizer! result result-cleanup!)
+       result)))
 
- (define (command-drop! command*)
+ (define (drop-command! command*)
    (error-on-non-success
     #f
     (lambda ()
@@ -928,24 +933,43 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_cmd_drop
     "failed to drop command"))
 
- (define cancel!
-   (case-lambda
-    ((connection* command*)
-     (cancel! connection*
-              command*
-              (foreign-value "CS_CANCEL_ALL" CS_INT)))
-    ((connection* command* type)
-     ((foreign-lambda CS_RETCODE
-                      "ct_cancel"
-                      (c-pointer "CS_CONNECTION")
-                      (c-pointer "CS_COMMAND")
-                      CS_INT)
-      connection* command* type))))
+ (define cancel*
+   (foreign-lambda CS_RETCODE
+                   "ct_cancel"
+                   (c-pointer "CS_CONNECTION")
+                   (c-pointer "CS_COMMAND")
+                   CS_INT))
+
+ (define (cancel! conn-or-res)
+   ;; Description from Open Client Client-Library/C Reference Manual:
+   ;; "For CS_CANCEL_CURRENT cancels, connection must be NULL.
+   ;;  For CS_CANCEL_ATTN and CS_CANCEL_ALL cancels, one of
+   ;;  connection or cmd must be NULL. If connection is supplied and cmd
+   ;;  is NULL, the cancel operation applies to all commands pending
+   ;;  for this connection."
+   (cancel*
+    (and (freetds-connection? conn-or-res) (freetds-connection-ptr conn-or-res))
+    (and (freetds-result? conn-or-res) (freetds-result-command-ptr conn-or-res))
+    (foreign-value "CS_CANCEL_ALL" CS_INT)))
 
  ;;;;;;;;;;;;;;;;;;;;;;;;;
  ;;;; Result processing
  ;;;;;;;;;;;;;;;;;;;;;;;;;
 
+ (define-record freetds-result command-ptr bound-vars)
+
+ (define (result-cleanup! result)
+   (and-let* ((command* (freetds-result-command-ptr result))
+              (bound-vars (freetds-result-bound-vars result)))
+     (cancel! result)
+     (drop-command! command*)
+     (freetds-result-command-ptr-set! result #f)
+     (freetds-result-bound-vars-set! result #f))
+   (void))
+
+ ;; The results returned by ct_results are not complete result sets,
+ ;; but just a descriptive structure with info on number and types of
+ ;; columns etc.  Fetch-row retreives the next value from the server.
  (define (results! connection* command*)
    (let-location ((rettype CS_INT))
      (let* ((results (foreign-lambda CS_RETCODE
@@ -995,7 +1019,99 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_bind
     "failed to bind result value"))
 
- (define (fetch! command*)
+(define (make-bound-variables connection* command*)
+  (let-values (((retcode column-count) (results-info-column-count! command*)))
+    (list-tabulate
+     column-count
+     (lambda (column)
+       (let ((data-format* (make-CS_DATAFMT*)))
+         (describe! connection* command* (add1 column) data-format*)
+         ;; let's have a table here for modifying,
+         ;; if necessary, the data-format*.
+         (let ((datatype (data-format-datatype data-format*)))
+           (select datatype
+                   (((foreign-value "CS_CHAR_TYPE" CS_INT)
+                     (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
+                     (foreign-value "CS_TEXT_TYPE" CS_INT)
+                     (foreign-value "CS_VARCHAR_TYPE" CS_INT)
+                     (foreign-value "CS_BINARY_TYPE" CS_INT)
+                     (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
+                     (foreign-value "CS_VARBINARY_TYPE" CS_INT)
+                     (foreign-value "CS_DATETIME_TYPE" CS_INT)
+                     (foreign-value "CS_DATETIME4_TYPE" CS_INT))
+                    (data-format-format-set!
+                     data-format*
+                     (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
+           (let ((make-type* (alist-ref/default datatype
+                                                datatype->make-type*))
+                 (type-size (alist-ref/default datatype
+                                               datatype->type-size))
+                 (translate-type* (alist-ref/default
+                                   datatype
+                                   datatype->translate-type*)))
+             (let* ((length (inexact->exact
+                             (ceiling
+                              (/ (data-format-max-length data-format*)
+                                 type-size))))
+                    (value* (make-type* length))
+                    (indicator* (make-CS_SMALLINT* 1)))
+               (if (bind! connection* command* (+ column 1)
+                          data-format* value* indicator*)
+                   (cons* value* indicator* translate-type* length))))))))))
+
+ ;; Currently this assumes a command can only return one result
+ ;; (actually, it returns only the first)
+ (define (consume-results-and-bind-variables connection command*)
+   (let loop ((bound-variables #f))
+     (let*-values (((connection*) (freetds-connection-ptr connection))
+                   ((result-status result-type) (results! connection* command*)))
+       (match result-status
+         ((? success?)
+          (match result-type
+            ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
+            ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
+            ((? row-format-result?)
+             (make-bound-variables connection* command*))
+            ((? row-result?)
+             (make-bound-variables connection* command*))
+            ((or (? command-done?) (? command-succeed?))
+             (loop bound-variables))
+            (else
+             (check-server-errors! result-type connection*
+                                   'consume-results-and-bind-variables)
+             ;; If no server errors, something's up.
+             ;; TODO: Maybe we need to clean up?
+             (freetds-error 'consume-results-and-bind-variables
+                            "ct_results returned a bizarre result type"
+                            result-type))))
+         ((? fail?)
+          ;; We dont have a proper result object here, so we call cancel* manually
+          (let ((retcode (cancel* #f command*
+                                  (foreign-value "CS_CANCEL_ALL" CS_INT))))
+            (match retcode
+              ((? fail?)
+               (connection-close connection)
+               (freetds-error 'consume-results-and-bind-variables
+                              (string-append "ct_results and ct_cancel failed, "
+                                             "prompting the connection to close")
+                              retcode))
+              (else
+               (freetds-error 'consume-results-and-bind-variables
+                              "ct_results failed, cancelling command"
+                              retcode)))))
+         ((? end-results?)
+          ;; This is here to work around a bug in FreeTDS (0.82); in some cases,
+          ;; it returns no error code when an invalid query was sent.
+          ;; See http://lists.ibiblio.org/pipermail/freetds/2007q3/022269.html
+          (check-server-errors! result-type connection*
+                                'consume-results-and-bind-variables)
+          bound-variables)
+         (else
+          (freetds-error 'consume-results-and-bind-variables
+                         "ct_results returned a bizarre result status"
+                         result-status))))))
+
+ (define (fetch! result)
    (let-location ((retcode CS_INT))
      (let* ((fetch* (foreign-lambda* CS_INT (((c-pointer "CS_COMMAND") cmd)
                                              ((c-pointer int) res))
@@ -1003,95 +1119,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                      "*res = ct_fetch(cmd, CS_UNUSED, CS_UNUSED,"
                                      "                CS_UNUSED, &rows_read);"
                                      "C_return(rows_read);"))
-            (rows-read (fetch* command* (location retcode))))
+            (rows-read (fetch* (freetds-result-command-ptr result)
+                               (location retcode))))
        (values rows-read retcode))))
 
- (define (make-bound-variables connection command*)
-   (let*-values (((connection*) (freetds-connection-ptr connection))
-                 ((result-status result-type) (results! connection* command*)))
-     (match result-status
-       ((? success?)
-        (match result-type
-          ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
-          ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
-          ((or (? row-result?)
-               (? row-format-result?))
-           (let-values (((retcode column-count) (results-info-column-count! command*)))
-             (list-tabulate
-              column-count
-              (lambda (column)
-                (let ((data-format* (make-CS_DATAFMT*)))
-                  (describe! connection* command* (add1 column) data-format*)
-                  ;; let's have a table here for modifying,
-                  ;; if necessary, the data-format*.
-                  (let ((datatype (data-format-datatype data-format*)))
-                    (select datatype
-                            (((foreign-value "CS_CHAR_TYPE" CS_INT)
-                              (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
-                              (foreign-value "CS_TEXT_TYPE" CS_INT)
-                              (foreign-value "CS_VARCHAR_TYPE" CS_INT)
-                              (foreign-value "CS_BINARY_TYPE" CS_INT)
-                              (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
-                              (foreign-value "CS_VARBINARY_TYPE" CS_INT)
-                              (foreign-value "CS_DATETIME_TYPE" CS_INT)
-                              (foreign-value "CS_DATETIME4_TYPE" CS_INT))
-                             (data-format-format-set!
-                              data-format*
-                              (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
-                    (let ((make-type* (alist-ref/default datatype
-                                                         datatype->make-type*))
-                          (type-size (alist-ref/default datatype
-                                                        datatype->type-size))
-                          (translate-type* (alist-ref/default
-                                            datatype
-                                            datatype->translate-type*)))
-                      (let* ((length (inexact->exact
-                                      (ceiling
-                                       (/ (data-format-max-length data-format*)
-                                          type-size))))
-                             (value* (make-type* length))
-                             (indicator* (make-CS_SMALLINT* 1)))
-                        (if (bind! connection* command* (+ column 1)
-                                   data-format* value* indicator*)
-                            (cons* value* indicator* translate-type* length))))))))))
-          ((? command-done?)
-           ;; is this appropriate? do we need to deallocate the
-           ;; command here?
-           (make-eor-object))
-          ((? command-succeed?)
-           '())
-          (_
-           (check-server-errors! result-type connection* 'make-bound-variables)
-           ;; If no server errors, something's up
-           (freetds-error 'make-bound-variables
-                          "ct_results returned a bizarre result-type"
-                          result-type))))
-       ((? fail?)
-        (let ((retcode (cancel! connection* command*)))
-          (match retcode
-            ((? fail?)
-             (connection-close connection)
-             (freetds-error 'make-bound-variables
-                            (string-append "ct_results and ct_cancel failed, "
-                                           "prompting the connection to close")
-                            retcode))
-            (_
-             (freetds-error 'make-bound-variables
-                            "ct_results failed, cancelling command"
-                            retcode)))))
-       ((? end-results?)
-        ;; This is here to work around a bug in FreeTDS (0.82); in some cases,
-        ;; it returns no error code when an invalid query was sent.
-        ;; See http://lists.ibiblio.org/pipermail/freetds/2007q3/022269.html
-        (check-server-errors! result-type connection* 'make-bound-variables)
-        (make-eor-object))
-       (_
-        (freetds-error 'make-bound-variables
-                       "ct_results returned a bizarre result status"
-                       result-status)))))
-
- (define (row-fetch command* bound-variables)
-   (let-values (((rows-read retcode) (fetch! command*)))
+ (define (row-fetch result)
+   (let-values (((rows-read retcode) (fetch! result)))
      (match retcode
        ((? success? row-fail?)
         (map (lambda (bound-variable)
@@ -1100,39 +1133,30 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                           (if (null-indicator? indicator)
                               (sql-null)
                               (translate-type* value length))))
-             bound-variables))
+             (freetds-result-bound-vars result)))
        ((? fail?)
         ;; cancel
         ;; fail again -> close
-        (freetds-error 'row-fetch
-                       "fetch! returned CS_FAIL"
-                       retcode))
+        (freetds-error 'row-fetch "fetch! returned CS_FAIL" retcode))
        ((? end-data?) #f)
        (_
         (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
- (define (result-values connection command*)
-   (let ((bound-variables (make-bound-variables connection command*)))
-     (if (eor-object? bound-variables)
-         bound-variables
-         (let next ((results '()))
-           (let ((row (row-fetch command* bound-variables)))
-             (if (not row)
-                 results
-                 (next (cons row results))))))))
+ (define (result-values result)
+   (let next ((rows '()))
+     (let ((row (row-fetch result)))
+       (if (not row)
+           rows
+           (next (cons row rows))))))
 
  (define (call-with-result-set connection query . rest-args)
    ;; TODO: This is not too efficient
    (receive (params last)
      (split-at rest-args (sub1 (length rest-args)))
-     (let* ((process-command (car last))
-            (command* (send-query* connection query params)))
+     (let ((process-result (car last))
+           (result (send-query* connection query params)))
        (dynamic-wind
            void
-           (lambda () (process-command command*))
-           (lambda ()
-             ;; Only cancel the command here, so that the connection is
-             ;; reusable.
-             (cancel! (null-pointer) command*)
-             (command-drop! command*))))))
+           (lambda () (process-result result))
+           (lambda () (result-cleanup! result))))))
 )

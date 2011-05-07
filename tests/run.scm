@@ -22,95 +22,60 @@
 (define connection (make-connection server username password))
 
 (test-group "type parsing"
-  (call-with-result-set
-   connection
-   "SELECT 'one', 'testing', ''"
-   (lambda (command)
-     (test "String values are retrieved correctly"
-           '(("one" "testing" ""))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   "SELECT 0, -1, 110"
-   (lambda (command)
-     (test "Integer values are retrieved correctly"
-           '((0 -1 110))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   "SELECT 0.0, -1.5, 256.0, 257.0, 0.256, 110.12345"
-   (lambda (command)
-     (test "Numeric values are retrieved correctly"
+  (test "String values are retrieved correctly"
+        '(("one" "testing" ""))
+        (result-values (send-query connection "SELECT 'one', 'testing', ''")))
+  (test "Integer values are retrieved correctly"
+        '((0 -1 110))
+        (result-values (send-query connection "SELECT 0, -1, 110")))
+  (test "Numeric values are retrieved correctly"
            '((0.0 -1.5 256.0 257.0 0.256 110.12345))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   (conc "SELECT CAST(0.0 AS FLOAT), CAST(-1.5 AS FLOAT), "
-         "       CAST(256.0 AS FLOAT), CAST(257.0 AS FLOAT), "
-         "       CAST(0.125 AS FLOAT), CAST(110.0625 AS FLOAT)")
-   (lambda (command)
-     (test "Float values are retrieved correctly"
-           '((0.0 -1.5 256.0 257.0 0.125 110.0625))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   (conc "SELECT CAST(0.0 AS REAL), CAST(-1.5 AS REAL), "
-         "       CAST(256.0 AS REAL), CAST(257.0 AS REAL), "
-         "       CAST(0.125 AS REAL), CAST(110.0625 AS REAL)")
-   (lambda (command)
-     (test "Real values are retrieved correctly"
-           '((0.0 -1.5 256.0 257.0 0.125 110.0625))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   "SELECT NULL, NULL"
-   (lambda (command)
-     (test "NULL values are retrieved correctly"
-           (list (list (sql-null) (sql-null)))
-           (result-values connection command)))))
+           (result-values
+            (send-query connection
+                        "SELECT 0.0, -1.5, 256.0, 257.0, 0.256, 110.12345")))
+  (test "Float values are retrieved correctly"
+        '((0.0 -1.5 256.0 257.0 0.125 110.0625))
+        (result-values
+         (send-query connection
+                     (conc "SELECT CAST(0.0 AS FLOAT), CAST(-1.5 AS FLOAT), "
+                           "       CAST(256.0 AS FLOAT), CAST(257.0 AS FLOAT), "
+                           "       CAST(0.125 AS FLOAT), CAST(110.0625 AS FLOAT)"))))
+  (test "Real values are retrieved correctly"
+        '((0.0 -1.5 256.0 257.0 0.125 110.0625))
+        (result-values
+         (send-query connection
+                     (conc "SELECT CAST(0.0 AS REAL), CAST(-1.5 AS REAL), "
+                           "       CAST(256.0 AS REAL), CAST(257.0 AS REAL), "
+                           "       CAST(0.125 AS REAL), CAST(110.0625 AS REAL)"))))
+  (test "NULL values are retrieved correctly"
+        (list (list (sql-null) (sql-null)))
+        (result-values (send-query connection "SELECT NULL, NULL"))))
+
 (test-group "type unparsing"
-  (call-with-result-set
-   connection
-   "SELECT ?, ?, ?"
-   "one" "testing" ""
-   (lambda (command)
-     (test "String values are written correctly"
-           '(("one" "testing" ""))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   "SELECT ?, ?, ?"
-   0 -1 110
-   (lambda (command)
-     (test "Integer values are written correctly"
-           '((0 -1 110))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   "SELECT ?, ?, ?"
-   0.0 -1.5 110.12345
-   (lambda (command)
-     (test "Float values are written correctly"
-           '((0.0 -1.5 110.12345))
-           (result-values connection command))))
-  (call-with-result-set
-   connection
-   "SELECT ?, ?"
-   (sql-null) (sql-null)
-   (lambda (command)
-     (test "NULL values are written correctly"
-           (list (list (sql-null) (sql-null)))
-           (result-values connection command)))))
+  (test "String values are written correctly"
+        '(("one" "testing" ""))
+        (result-values
+         (send-query connection "SELECT ?, ?, ?" "one" "testing" "")))
+  (test "Integer values are written correctly"
+        '((0 -1 110))
+        (result-values (send-query connection "SELECT ?, ?, ?" 0 -1 110)))
+  (test "Float values are written correctly"
+        '((0.0 -1.5 110.12345))
+        (result-values
+         (send-query connection "SELECT ?, ?, ?" 0.0 -1.5 110.12345)))
+  (test "NULL values are written correctly"
+        (list (list (sql-null) (sql-null)))
+        (result-values
+         (send-query connection "SELECT ?, ?" (sql-null) (sql-null)))))
+
 (test-group "misc"
+  (test "Call-with-result-set works the way it should"
+        ;; TODO: Shouldn't SELECT 1, 2, 3 UNION SELECT 4, 5, 6 return
+        ;; ((1 2 3) (4 5 6)) instead of ((4 5 6) (1 2 3))?
+        '((1 2 3))
+        (call-with-result-set connection "SELECT 1, 2, 3" result-values))
   (test-error "Error for invalid SQL"
-              (call-with-result-set
-               connection "INVALID"
-               ;; This should be just VOID, but there's a bug
-               ;; in FreeTDS which causes the error to be
-               ;; put in the queue but not returned as status.
-               ;; There's nothing we can do about that.
-               (lambda (command)
-                 (result-values connection command)))))
+              (send-query connection "INVALID")))
 
 (test-end)
 
