@@ -841,6 +841,32 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                   (data-format-datatype-set!
                    fmt* (foreign-value "CS_INT_TYPE" CS_INT))
                   #t)
+                 ((date? param)
+                  (data-format-datatype-set!
+                   fmt* (foreign-value "CS_DATETIME_TYPE" CS_INT))
+                  ((foreign-lambda* c-pointer
+                                    (((c-pointer "CS_CONTEXT") ctx)
+                                     (c-string s)
+                                     ((c-pointer "CS_DATAFMT") fmt))
+                                    "CS_CHAR *tmp = (CS_CHAR *)s;"
+                                    "CS_DATAFMT src;"
+                                    "CS_DATETIME *res;"
+                                    "CS_RETCODE ret;"
+                                    "res = malloc(sizeof(CS_DATETIME));"
+                                    "if (res == NULL)"
+                                    "  C_return(res);"
+                                    "src.namelen = 0;"
+                                    "src.datatype = CS_CHAR_TYPE;"
+                                    "src.maxlength = strlen(s);"
+                                    "ret = cs_convert(ctx, &src, s, fmt, res, NULL);"
+                                    "if (ret != CS_SUCCEED) {"
+                                    "  free(res);"
+                                    "  C_return(NULL);"
+                                    "}"
+                                    "C_return(res);")
+                   ;; We can't use ~4 or ~5 because FreeTDS chokes on the 'T'
+                   ;; time separator.  Also, it doesn't grok timezones.
+                   *app-context* (date->string param "~1 ~3") fmt*))
                  (else (error "Unknown parameter type" param)))))
      (data-format-name-length-set! fmt* 0) ; All params are nameless
      (data-format-status-set! fmt* (foreign-value "CS_INPUTVALUE" CS_INT))

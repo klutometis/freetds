@@ -123,6 +123,16 @@
         '((0.0 -1.5 110.12345))
         (result-values
          (send-query connection "SELECT ?, ?, ?" 0.0 -1.5 110.12345)))
+  (test "Datetime values are written correctly"
+        ;; TODO: Figure out how to make this thing use timezones
+        `((,(make-date 0  0  0  0 1 1 2000 0)
+           ,(make-date 0 56  1 17 9 5 2011 0)
+           ,(make-date 0 58 14 17 9 5 2011 0)))
+        (result-values (send-query connection
+                                   "SELECT ?, ?, ?"
+                                   (make-date 0  0  0  0 1 1 2000 0)
+                                   (make-date 0 56  1 17 9 5 2011 0)
+                                   (make-date 0 58 14 17 9 5 2011 0))))
   (test "NULL values are written correctly"
         (list (list (sql-null) (sql-null)))
         (result-values
