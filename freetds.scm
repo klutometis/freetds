@@ -183,7 +183,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define-make-type* CS_DATAFMT)
  (define-make-type* CS_DATEREC)
- (define-make-type* CS_DATAFMT)
 
  (define-for-syntax datatypes
    '(CS_BINARY
