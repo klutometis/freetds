@@ -22,19 +22,41 @@
 (define connection (make-connection server username password))
 
 (test-group "low-level query & results interface"
-  (let ((res (send-query connection "SELECT 1, 2, 3 UNION SELECT 4, 5, 6")))
+  (let ((res (send-query connection
+                         (conc "SELECT 1 AS one, 2 AS two, 3 AS three"
+                               " UNION "
+                               "SELECT 4, 5, 6"))))
     (test-assert "send-query returns result object"
                  (result? res))
+    (test "Column name can be obtained"
+          'one
+          (column-name res 0))
+    (test "All column names can be obtained"
+          '(one two three)
+          (column-names res))
     (test "First row-fetch returns one row"
           '(1 2 3)
           (row-fetch res))
-    (test "Second row-fetch returns another row"
-          '(4 5 6)
-          (row-fetch res))
+    (test "Second row-fetch returns another row (alist)"
+          '((one . 4) (two . 5) (three . 6))
+          (row-fetch/alist res))
     (test-assert "Final row-fetch returns #f"
                  (not (row-fetch res)))
     (test-assert "Cleaning up the result gives no problems"
                  (result-cleanup! res)))
+  (test "result-values retrieves all values"
+        '((1 2 3) (4 5 6))
+        (result-values
+         (send-query connection (conc "SELECT 1 AS one, 2 AS two, 3 AS three"
+                                      " UNION "
+                                      "SELECT 4, 5, 6"))))
+  (test "result-values/alist retrieves all values as alist"
+        '(((one . 1) (two . 2) (three . 3))
+          ((one . 4) (two . 5) (three . 6)))
+        (result-values/alist
+         (send-query connection (conc "SELECT 1 AS one, 2 AS two, 3 AS three"
+                                      " UNION "
+                                      "SELECT 4, 5, 6"))))
   ;; TODO: Maybe we should always fetch the entire result so this doesn't
   ;; have to be a problem
   (test-error "Querying before reading out the previous result gives error"

@@ -22,7 +22,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 (module
  freetds
  (make-connection connection? connection-open? connection-close connection-reset!
-  send-query send-query* result? result-cleanup! row-fetch result-values
+  send-query send-query* result? result-cleanup!
+  row-fetch row-fetch/alist result-values result-values/alist
+  column-name column-names
   call-with-result-set
   ;; if we don't export varchar-string, there are compilation errors!
   varchar-string
@@ -1019,6 +1021,16 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_bind
     "failed to bind result value"))
 
+ (define (name-from-data-format data-format*)
+   (let* ((len (data-format-name-length data-format*))
+          (str (make-string len)))
+     (let lp ((idx 0))
+       (if (= idx len)
+           (string->symbol str)
+           (begin
+             (string-set! str idx (data-format-name data-format* idx))
+             (lp (add1 idx)))))))
+
 (define (make-bound-variables connection* command*)
   (let-values (((retcode column-count) (results-info-column-count! command*)))
     (list-tabulate
@@ -1054,10 +1066,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                               (/ (data-format-max-length data-format*)
                                  type-size))))
                     (value* (make-type* length))
-                    (indicator* (make-CS_SMALLINT* 1)))
+                    (indicator* (make-CS_SMALLINT* 1))
+                    (name (name-from-data-format data-format*)))
                (if (bind! connection* command* (+ column 1)
                           data-format* value* indicator*)
-                   (cons* value* indicator* translate-type* length))))))))))
+                   (cons* value* indicator* translate-type* length name))))))))))
 
  ;; Currently this assumes a command can only return one result
  ;; (actually, it returns only the first)
@@ -1121,12 +1134,24 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                (location retcode))))
        (values rows-read retcode))))
 
+ (define (column-name result idx)
+   (match-let (((value indicator translate-type* length . name)
+                (list-ref (freetds-result-bound-vars result) idx)))
+              name))
+
+ (define (column-names result)
+   (map (lambda (bound-variable)
+          (match-let (((value indicator translate-type* length . name)
+                       bound-variable))
+                     name))
+        (freetds-result-bound-vars result)))
+
  (define (row-fetch result)
    (let-values (((rows-read retcode) (fetch! result)))
      (match retcode
        ((? success? row-fail?)
         (map (lambda (bound-variable)
-               (match-let (((value indicator translate-type* . length)
+               (match-let (((value indicator translate-type* length . name)
                             bound-variable))
                           (if (null-indicator? indicator)
                               (sql-null)
@@ -1145,9 +1170,22 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        (_
         (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
+ ;; This could be made more efficient by putting it in row-fetch's mapped lambda
+ (define (row-fetch/alist result)
+   (and-let* ((row (row-fetch result))
+              (names (column-names result)))
+     (map cons names row)))
+
  (define (result-values result)
    (let next ((rows (list)))
      (let ((row (row-fetch result)))
+       (if (not row)
+           (reverse! rows)
+           (next (cons row rows))))))
+
+ (define (result-values/alist result)
+   (let next ((rows (list)))
+     (let ((row (row-fetch/alist result)))
        (if (not row)
            (reverse! rows)
            (next (cons row rows))))))
