@@ -68,18 +68,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                  "    cs_ctx_drop(ctx);") ctx)))
     ctx))
 
- (define alist-ref/default
-   (case-lambda
-    ((key alist)
-     (alist-ref/default key alist (lambda ()
-                                    (error "could not find key" key alist))))
-    ((key alist default)
-     (let* ((alist-sentinel (cons #f #f))
-            (value (alist-ref key alist eqv? alist-sentinel)))
-       (if (eq? alist-sentinel value)
-           (default)
-           value)))))
-
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  ;;;; Custom types and FreeTDS<->Scheme type conversion
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1033,13 +1021,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                      (data-format-format-set!
                       data-format*
                       (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
-            (let ((make-type* (alist-ref/default datatype
-                                                 datatype->make-type*))
-                  (type-size (alist-ref/default datatype
-                                                datatype->type-size))
-                  (translate-type* (alist-ref/default
-                                    datatype
-                                    datatype->translate-type*)))
+            (let ((make-type* (alist-ref datatype datatype->make-type*))
+                  (type-size (alist-ref datatype datatype->type-size))
+                  (translate-type* (alist-ref datatype datatype->translate-type*)))
+              (unless (and make-type* type-size translate-type*)
+                (error "Encountered an unknown datatype in result set!" datatype))
               (let* ((length (inexact->exact
                               (ceiling
                                (/ (data-format-max-length data-format*)
