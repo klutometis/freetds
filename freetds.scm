@@ -25,19 +25,14 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
   send-query send-query* result? result-cleanup!
   row-fetch row-fetch/alist result-values result-values/alist
   column-name column-names
-  call-with-result-set
-  ;; if we don't export varchar-string, there are compilation errors!
-  varchar-string
-  eor-object?
-  call-with-connection)
- (import scheme
-         chicken
-         foreign)
+  call-with-result-set call-with-connection)
 
- (import-for-syntax matchable)
+ (import scheme chicken foreign)
 
  (use lolevel srfi-1 srfi-4 data-structures
       foreigners srfi-19 matchable foof-loop sql-null)
+
+ (import-for-syntax matchable)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -88,8 +83,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  ;;;; Custom types and FreeTDS<->Scheme type conversion
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
- (define-record eor-object)
 
  (define-syntax define-make-type*
    (er-macro-transformer
@@ -370,8 +363,13 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define translate-CS_LONGCHAR*
    translate-CS_CHAR*)
  (define (translate-CS_VARCHAR* varchar* length)
-   (CS_CHAR*->string (varchar-string varchar*)
-                     (varchar-length varchar*)))
+   (let* ((len (varchar-length varchar*))
+          (str (make-string len)))
+     (let lp ((idx 0))
+       (if (= idx len)
+           str
+           (begin
+             (string-set! str idx (varchar-string varchar* idx)))))))
  (define (translate-CS_DATETIME* datetime* length)
    (CS_DATETIME*->srfi-19-date
     datetime*
