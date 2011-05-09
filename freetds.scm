@@ -1143,10 +1143,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
  (define (result-values result)
-   (let next ((rows '()))
+   (let next ((rows (list)))
      (let ((row (row-fetch result)))
        (if (not row)
-           rows
+           (reverse! rows)
            (next (cons row rows))))))
 
  (define (call-with-result-set connection query . rest-args)

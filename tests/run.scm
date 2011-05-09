@@ -70,10 +70,10 @@
 
 (test-group "misc"
   (test "Call-with-result-set works the way it should"
-        ;; TODO: Shouldn't SELECT 1, 2, 3 UNION SELECT 4, 5, 6 return
-        ;; ((1 2 3) (4 5 6)) instead of ((4 5 6) (1 2 3))?
-        '((1 2 3))
-        (call-with-result-set connection "SELECT 1, 2, 3" result-values))
+        '((1 2 3) (4 5 6))
+        (call-with-result-set connection
+                              "SELECT 1, 2, 3 UNION SELECT 4, 5, 6"
+                              result-values))
   (test-error "Error for invalid SQL"
               (send-query connection "INVALID")))
 
