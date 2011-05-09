@@ -134,16 +134,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                       "C_free(type);"))
                     ,%type*))))))))
 
- (define-syntax define-type-size
-   (er-macro-transformer
-    (lambda (expression rename compare)
-      (match-let (((_ type) expression))
-        (let ((size (sprintf "sizeof(~a)" type))
-              (type-size (string->symbol (sprintf "~a-size" type))))
-          (let ((%define (rename 'define))
-                (%foreign-value (rename 'foreign-value)))
-            `(,%define ,type-size (,%foreign-value ,size int))))))))
-
  (define-foreign-record-type
    (CS_DATAFMT CS_DATAFMT)
    ;; 132 == CS_MAX_NAME
@@ -239,17 +229,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
          %begin
          (map (lambda (type)
                 `(,%define-make-type* ,type))
-              datatypes))))))
-
- (define-syntax define-type-sizes/datatypes
-   (er-macro-transformer
-    (lambda (expression rename compare)
-      (let ((%define-type-size (rename 'define-type-size))
-            (%begin (rename 'begin)))
-        (cons
-         %begin
-         (map (lambda (type)
-                `(,%define-type-size ,type))
               datatypes))))))
 
  (define (char-null? char)
@@ -434,14 +413,13 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define translate-CS_IMAGE* translate-CS_TEXT*)
 
  (define-for-syntax (datatype->integer datatype)
-   (let ((datatype-type (format "~a_TYPE" datatype)))
-     `(foreign-value ,datatype-type CS_INT)))
+   `(foreign-value ,(format "~a_TYPE" datatype) CS_INT))
+
+ (define-for-syntax (datatype->size datatype)
+   `(foreign-value ,(sprintf "sizeof(~a)" datatype) CS_INT))
 
  (define-for-syntax (datatype->make-type* datatype)
    (string->symbol (format "make-~a*" datatype)))
-
- (define-for-syntax (datatype->type-size datatype)
-   (string->symbol (format "~a-size" datatype)))
 
  (define-for-syntax (datatype->translate-type* datatype)
    (string->symbol (format "translate-~a*" datatype)))
@@ -459,17 +437,21 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                   `(,%unquote ,(datatype->make-type* type))))
                           datatypes)))))))
 
+ ;; Create a alist mapping of datatype integer values and byte sizes
+ ;; So you'd get ((8 . 2) (9 . 2)) where 8 is the constant value of CS_INT_TYPE,
+ ;; 9 is the constant value of CS_REAL, etc.
  (define-syntax define-datatype->type-size/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
       (let ((%define (rename 'define))
             (%quasiquote (rename 'quasiquote))
-            (%unquote (rename 'unquote)))
+            (%unquote (rename 'unquote))
+            (%foreign-value (rename 'foreign-value)))
         `(,%define datatype->type-size
                    (,%quasiquote
                     ,(map (lambda (type)
                             (cons `(,%unquote ,(datatype->integer type))
-                                  `(,%unquote ,(datatype->type-size type))))
+                                  `(,%unquote ,(datatype->size type))))
                           datatypes)))))))
 
  (define-syntax define-datatype->translate-type*/datatypes
@@ -486,7 +468,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                           datatypes)))))))
 
  (define-make-types*/datatypes)
- (define-type-sizes/datatypes)
  (define-datatype->make-type*/datatypes)
  (define-datatype->type-size/datatypes)
  (define-datatype->translate-type*/datatypes)
