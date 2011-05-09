@@ -21,6 +21,34 @@
 ;; From now on, just keep using the same connection
 (define connection (make-connection server username password))
 
+(test-group "low-level query & results interface"
+  (let ((res (send-query connection "SELECT 1, 2, 3 UNION SELECT 4, 5, 6")))
+    (test-assert "send-query returns result object"
+                 (result? res))
+    (test "First row-fetch returns one row"
+          '(1 2 3)
+          (row-fetch res))
+    (test "Second row-fetch returns another row"
+          '(4 5 6)
+          (row-fetch res))
+    (test-assert "Final row-fetch returns #f"
+                 (not (row-fetch res)))
+    (test-assert "Cleaning up the result gives no problems"
+                 (result-cleanup! res)))
+  ;; TODO: Maybe we should always fetch the entire result so this doesn't
+  ;; have to be a problem
+  (test-error "Querying before reading out the previous result gives error"
+              (begin (send-query connection "SELECT 1, 2, 3")
+                     (send-query connection "SELECT 4, 5, 6")))
+  (test "After resetting the connection, we can send queries again"
+        '((7 8 9))
+        (begin (connection-reset! connection)
+               (result-values (send-query connection "SELECT 7, 8, 9"))))
+  (test "Cleaning up one result allows us to send another"
+        '((13 14 15))
+        (begin (result-cleanup! (send-query connection "SELECT 10, 11, 12"))
+               (result-values (send-query connection "SELECT 13, 14, 15")))))
+
 (test-group "type parsing"
   (test "String values are retrieved correctly"
         '(("one" "testing" ""))

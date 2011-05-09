@@ -21,10 +21,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
 (module
  freetds
- (make-connection connection? connection-open? connection-close
-  send-query send-query*
+ (make-connection connection? connection-open? connection-close connection-reset!
+  send-query send-query* result? result-cleanup! row-fetch result-values
   call-with-result-set
-  result-values
   ;; if we don't export varchar-string, there are compilation errors!
   varchar-string
   eor-object?
@@ -746,6 +745,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define connection? freetds-connection?)
 
+ (define (connection-reset! conn)
+   (cancel* (freetds-connection-ptr conn)
+            #f
+            (foreign-value "CS_CANCEL_ALL" CS_INT)))
+
  (define (make-connection host username password #!optional database)
    (let ((ptr (allocate-connection!)))
      (let ((connection (make-freetds-connection ptr)))
@@ -905,9 +909,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (send-query* connection query parameters))
 
  (define (send-query* connection query parameters)
-   ;; Only one command at a time is allowed, so we need to cancel any
-   ;; commands there may be pending.
-   (cancel! connection)
    (let ((command* (allocate-command! connection)))
      (command! connection
                command*
@@ -918,7 +919,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (send! command* connection)
      ;; TODO: Memory leak when send! or add-param! fails
      (let* ((bound-vars (consume-results-and-bind-variables connection command*))
-            (result (make-freetds-result command* bound-vars)))
+            (result (make-freetds-result connection command* bound-vars)))
        (set-finalizer! result result-cleanup!)
        result)))
 
@@ -933,6 +934,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     'ct_cmd_drop
     "failed to drop command"))
 
+ ;; Description from Open Client Client-Library/C Reference Manual:
+ ;; "For CS_CANCEL_CURRENT cancels, connection must be NULL.
+ ;;  For CS_CANCEL_ATTN and CS_CANCEL_ALL cancels, one of
+ ;;  connection or cmd must be NULL. If connection is supplied and cmd
+ ;;  is NULL, the cancel operation applies to all commands pending
+ ;;  for this connection."
  (define cancel*
    (foreign-lambda CS_RETCODE
                    "ct_cancel"
@@ -940,36 +947,29 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                    (c-pointer "CS_COMMAND")
                    CS_INT))
 
- (define (cancel! conn-or-res)
-   ;; Description from Open Client Client-Library/C Reference Manual:
-   ;; "For CS_CANCEL_CURRENT cancels, connection must be NULL.
-   ;;  For CS_CANCEL_ATTN and CS_CANCEL_ALL cancels, one of
-   ;;  connection or cmd must be NULL. If connection is supplied and cmd
-   ;;  is NULL, the cancel operation applies to all commands pending
-   ;;  for this connection."
-   (cancel*
-    (and (freetds-connection? conn-or-res) (freetds-connection-ptr conn-or-res))
-    (and (freetds-result? conn-or-res) (freetds-result-command-ptr conn-or-res))
-    (foreign-value "CS_CANCEL_ALL" CS_INT)))
-
  ;;;;;;;;;;;;;;;;;;;;;;;;;
  ;;;; Result processing
  ;;;;;;;;;;;;;;;;;;;;;;;;;
 
- (define-record freetds-result command-ptr bound-vars)
+ (define-record freetds-result connection command-ptr bound-vars)
+ (define result? freetds-result?)
+
+ (define (cancel-command! cmd*)
+   (cancel* #f cmd* (foreign-value "CS_CANCEL_ALL" CS_INT)))
 
  (define (result-cleanup! result)
    (and-let* ((command* (freetds-result-command-ptr result))
               (bound-vars (freetds-result-bound-vars result)))
-     (cancel! result)
+     (cancel-command! command*)
      (drop-command! command*)
+     (freetds-result-connection-set! result #f)
      (freetds-result-command-ptr-set! result #f)
      (freetds-result-bound-vars-set! result #f))
    (void))
 
  ;; The results returned by ct_results are not complete result sets,
  ;; but just a descriptive structure with info on number and types of
- ;; columns etc.  Fetch-row retreives the next value from the server.
+ ;; columns etc.  Row-fetch retreives the next value from the server.
  (define (results! connection* command*)
    (let-location ((rettype CS_INT))
      (let* ((results (foreign-lambda CS_RETCODE
@@ -1085,9 +1085,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                             "ct_results returned a bizarre result type"
                             result-type))))
          ((? fail?)
-          ;; We dont have a proper result object here, so we call cancel* manually
-          (let ((retcode (cancel* #f command*
-                                  (foreign-value "CS_CANCEL_ALL" CS_INT))))
+          (let ((retcode (cancel-command! command*)))
             (match retcode
               ((? fail?)
                (connection-close connection)
@@ -1138,7 +1136,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         ;; cancel
         ;; fail again -> close
         (freetds-error 'row-fetch "fetch! returned CS_FAIL" retcode))
-       ((? end-data?) #f)
+       ((? end-data?)
+        ;; This is required to "empty out" the result sets.  We could skip this
+        ;; but then we are continuously canceling commands.  Not so great...
+        (consume-results-and-bind-variables
+         (freetds-result-connection result) (freetds-result-command-ptr result))
+        #f)
        (_
         (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
