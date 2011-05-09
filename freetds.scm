@@ -1031,46 +1031,46 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
              (string-set! str idx (data-format-name data-format* idx))
              (lp (add1 idx)))))))
 
-(define (make-bound-variables connection* command*)
-  (let-values (((retcode column-count) (results-info-column-count! command*)))
-    (list-tabulate
-     column-count
-     (lambda (column)
-       (let ((data-format* (make-CS_DATAFMT*)))
-         (describe! connection* command* (add1 column) data-format*)
-         ;; let's have a table here for modifying,
-         ;; if necessary, the data-format*.
-         (let ((datatype (data-format-datatype data-format*)))
-           (select datatype
-                   (((foreign-value "CS_CHAR_TYPE" CS_INT)
-                     (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
-                     (foreign-value "CS_TEXT_TYPE" CS_INT)
-                     (foreign-value "CS_VARCHAR_TYPE" CS_INT)
-                     (foreign-value "CS_BINARY_TYPE" CS_INT)
-                     (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
-                     (foreign-value "CS_VARBINARY_TYPE" CS_INT)
-                     (foreign-value "CS_DATETIME_TYPE" CS_INT)
-                     (foreign-value "CS_DATETIME4_TYPE" CS_INT))
-                    (data-format-format-set!
-                     data-format*
-                     (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
-           (let ((make-type* (alist-ref/default datatype
-                                                datatype->make-type*))
-                 (type-size (alist-ref/default datatype
-                                               datatype->type-size))
-                 (translate-type* (alist-ref/default
-                                   datatype
-                                   datatype->translate-type*)))
-             (let* ((length (inexact->exact
-                             (ceiling
-                              (/ (data-format-max-length data-format*)
-                                 type-size))))
-                    (value* (make-type* length))
-                    (indicator* (make-CS_SMALLINT* 1))
-                    (name (name-from-data-format data-format*)))
-               (if (bind! connection* command* (+ column 1)
-                          data-format* value* indicator*)
-                   (cons* value* indicator* translate-type* length name))))))))))
+ (define (make-bound-variables connection* command*)
+   (let-values (((retcode column-count) (results-info-column-count! command*)))
+     (list-tabulate
+      column-count
+      (lambda (column)
+        (let ((data-format* (make-CS_DATAFMT*)))
+          (describe! connection* command* (add1 column) data-format*)
+          ;; let's have a table here for modifying,
+          ;; if necessary, the data-format*.
+          (let ((datatype (data-format-datatype data-format*)))
+            (select datatype
+                    (((foreign-value "CS_CHAR_TYPE" CS_INT)
+                      (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
+                      (foreign-value "CS_TEXT_TYPE" CS_INT)
+                      (foreign-value "CS_VARCHAR_TYPE" CS_INT)
+                      (foreign-value "CS_BINARY_TYPE" CS_INT)
+                      (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
+                      (foreign-value "CS_VARBINARY_TYPE" CS_INT)
+                      (foreign-value "CS_DATETIME_TYPE" CS_INT)
+                      (foreign-value "CS_DATETIME4_TYPE" CS_INT))
+                     (data-format-format-set!
+                      data-format*
+                      (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
+            (let ((make-type* (alist-ref/default datatype
+                                                 datatype->make-type*))
+                  (type-size (alist-ref/default datatype
+                                                datatype->type-size))
+                  (translate-type* (alist-ref/default
+                                    datatype
+                                    datatype->translate-type*)))
+              (let* ((length (inexact->exact
+                              (ceiling
+                               (/ (data-format-max-length data-format*)
+                                  type-size))))
+                     (value* (make-type* length))
+                     (indicator* (make-CS_SMALLINT* 1))
+                     (name (name-from-data-format data-format*)))
+                (if (bind! connection* command* (+ column 1)
+                           data-format* value* indicator*)
+                    (cons* value* indicator* translate-type* length name))))))))))
 
  ;; Currently this assumes a command can only return one result
  ;; (actually, it returns only the first)
