@@ -1,4 +1,4 @@
-(use test freetds sql-null)
+(use test freetds sql-null srfi-19)
 
 (include "test-freetds-secret.scm")
 
@@ -97,6 +97,16 @@
                      (conc "SELECT CAST(0.0 AS REAL), CAST(-1.5 AS REAL), "
                            "       CAST(256.0 AS REAL), CAST(257.0 AS REAL), "
                            "       CAST(0.125 AS REAL), CAST(110.0625 AS REAL)"))))
+  (test "Datetime values are retrieved correctly"
+        ;; TODO: Figure out how to make this thing use timezones
+        `((,(make-date 0  0  0  0 1 1 2000 0)
+           ,(make-date 0 56  1 17 9 5 2011 0)
+           ,(make-date 0 58 14 17 9 5 2011 0)))
+        (result-values
+         (send-query connection
+                     (conc "SELECT CAST('2000-01-01T00:00:00Z' AS DATETIME),"
+                           "       CAST('2011-05-09T17:01:56Z' AS DATETIME),"
+                           "       CAST('May 9 2011 17:14:58PM' AS DATETIME)"))))
   (test "NULL values are retrieved correctly"
         (list (list (sql-null) (sql-null)))
         (result-values (send-query connection "SELECT NULL, NULL"))))

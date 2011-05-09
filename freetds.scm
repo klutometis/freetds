@@ -124,6 +124,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define-foreign-record-type
    (CS_DATAFMT CS_DATAFMT)
+   (constructor: make-CS_DATAFMT*)
+   (destructor: free-CS_DATAFMT*)
    ;; 132 == CS_MAX_NAME
    (CS_CHAR (name 132) data-format-name)
    (CS_INT namelen data-format-name-length data-format-name-length-set!)
@@ -141,19 +143,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (CS_DATETIME CS_DATETIME)
    (CS_INT dtdays datetime-days)
    (CS_INT dttime datetime-time))
-
- (define-foreign-record-type
-   (CS_DATEREC CS_DATEREC)
-   (CS_INT dateyear daterec-year)
-   (CS_INT datemonth daterec-month)
-   (CS_INT datedmonth daterec-dmonth)
-   (CS_INT datedyear daterec-dyear)
-   (CS_INT datedweek daterec-week)
-   (CS_INT datehour daterec-hour)
-   (CS_INT dateminute daterec-minute)
-   (CS_INT datesecond daterec-second)
-   (CS_INT datemsecond daterec-msecond)
-   (CS_INT datetzone daterec-timezone))
 
  (define-foreign-record-type
    (CS_VARBINARY CS_VARBINARY)
@@ -180,9 +169,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (CS_CHAR scale numeric-scale)
    ;; 33 = CS_MAX_NUMLEN
    (CS_CHAR (array 33) numeric-array))
-
- (define-make-type* CS_DATAFMT)
- (define-make-type* CS_DATEREC)
 
  (define-for-syntax datatypes
    '(CS_BINARY
@@ -254,33 +240,39 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       max-length))))
 
  (define (CS_DATETIME*->srfi-19-date datetime* type)
-   (let ((daterec* (make-CS_DATEREC*)))
+   (let ((date-components (make-vector 8)))
      (error-on-non-success
       #f
-      (lambda ()
-        ((foreign-lambda CS_RETCODE
-                         "cs_dt_crack"
-                         (c-pointer "CS_CONTEXT")
-                         CS_INT
-                         (c-pointer "CS_VOID")
-                         (c-pointer "CS_DATEREC"))
-         *app-context*
-         type
-         datetime*
-         daterec*))
+      (lambda ()      
+        ((foreign-lambda* CS_INT (((c-pointer "CS_CONTEXT") ctx)
+                                  (CS_INT type)
+                                  ((c-pointer "CS_VOID") dtp)
+                                  (scheme-object v))
+                          "CS_RETCODE res; CS_DATEREC dr;"
+                          ""
+                          "res = cs_dt_crack(ctx, type, dtp, &dr);"
+                          "if (res != CS_SUCCEED)"
+                          "  C_return(res);"
+                          ""
+                          "/* Prepare vector in the order make-date accepts its arguments */"
+                          "/* Milliseconds->nanoseconds for make-date */"
+                          "C_set_block_item(v, 0, C_fix(dr.datemsecond*1000000));"
+                          "C_set_block_item(v, 1, C_fix(dr.datesecond));"
+                          "C_set_block_item(v, 2, C_fix(dr.dateminute));"
+                          "C_set_block_item(v, 3, C_fix(dr.datehour));"
+                          "C_set_block_item(v, 4, C_fix(dr.datedmonth));"
+                          "/* Day must be 1-31 for make-date */"
+                          "C_set_block_item(v, 5, C_fix(dr.datemonth+1));"
+                          "C_set_block_item(v, 6, C_fix(dr.dateyear));"
+                          "C_set_block_item(v, 7, C_fix(dr.datetzone));"
+                          "C_return(res);")
+         *app-context* type datetime* date-components))
       'cs_dt_crack
       "failed to crack date")
      ;; HACK: assuming that unparsable dates are NULL.
      (condition-case
-      (make-date (* (daterec-msecond daterec*) 1000000)
-                 (daterec-second daterec*)
-                 (daterec-minute daterec*)
-                 (daterec-hour daterec*)
-                 (daterec-dmonth daterec*)
-                 (add1 (daterec-month daterec*))
-                 (daterec-year daterec*)
-                 (daterec-timezone daterec*))
-      ((exn) (sql-null)))))
+         (apply make-date (vector->list date-components))
+       ((exn) (sql-null)))))
 
  (define-syntax CS_INT*->number
    (er-macro-transformer
@@ -853,6 +845,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (data-format-name-length-set! fmt* 0) ; All params are nameless
      (data-format-status-set! fmt* (foreign-value "CS_INPUTVALUE" CS_INT))
      (unless mem* (error "Could not allocate memory for parameter" param))
+     ;; This shouldn't really be necessary
+     (set-finalizer! fmt* free-CS_DATAFMT*)
      ;; Set up the parameter pointer's memory to be cleaned up when the command
      ;; is cleaned up (but no earlier!) -- it's not a pointer when sql-null
      (when (pointer? mem*) (set-finalizer! command* (lambda (c) (free mem*))))
@@ -1003,6 +997,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
       column-count
       (lambda (column)
         (let ((data-format* (make-CS_DATAFMT*)))
+          ;; This shouldn't really be necessary
+          (set-finalizer! data-format* free-CS_DATAFMT*)
           (describe! connection* command* (add1 column) data-format*)
           ;; let's have a table here for modifying,
           ;; if necessary, the data-format*.
