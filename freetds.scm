@@ -23,7 +23,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  freetds
  (make-connection connection? connection-open? connection-close connection-reset!
   send-query send-query* result? result-cleanup!
-  row-fetch row-fetch/alist result-values result-values/alist
+  result-values result-values/alist result-row result-row/alist result-value
   column-name column-names
   call-with-result-set call-with-connection)
 
@@ -875,10 +875,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      (for-each (lambda (p) (add-param! connection command* p)) parameters)
      (send! command* connection)
      ;; TODO: Memory leak when send! or add-param! fails
-     (let* ((bound-vars (consume-results-and-bind-variables connection command*))
-            (result (make-freetds-result connection command* bound-vars)))
-       (set-finalizer! result result-cleanup!)
-       result)))
+     (receive (bound-vars rows)
+       (consume-results-and-bind-variables connection command*)
+       (let ((result (make-freetds-result command* bound-vars rows)))
+         (set-finalizer! result result-cleanup!)
+         result))))
 
  (define (drop-command! command*)
    (error-on-non-success
@@ -906,7 +907,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;;;; Result processing
  ;;;;;;;;;;;;;;;;;;;;;;;;;
 
- (define-record freetds-result connection command-ptr bound-vars)
+ (define-record freetds-result command-ptr bound-vars rows)
  (define result? freetds-result?)
 
  (define (cancel-command! cmd*)
@@ -917,7 +918,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
               (bound-vars (freetds-result-bound-vars result)))
      (cancel-command! command*)
      (drop-command! command*)
-     (freetds-result-connection-set! result #f)
+     (freetds-result-rows-set! result #f)
      (freetds-result-command-ptr-set! result #f)
      (freetds-result-bound-vars-set! result #f))
    (void))
@@ -992,6 +993,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
              (string-set! str idx (data-format-name data-format* idx))
              (lp (add1 idx)))))))
 
+ (define-record freetds-bound-variable value indicator translator length name)
+
  (define (make-bound-variables connection* command*)
    (list-tabulate
     ;; Fetch number of columns
@@ -1029,14 +1032,16 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                    (value* (make-type* length))
                    (indicator* (make-CS_SMALLINT* 1))
                    (name (name-from-data-format data-format*)))
-              (if (bind! connection* command* (+ column 1)
-                         data-format* value* indicator*)
-                  (cons* value* indicator* translate-type* length name)))))))))
+              (and (bind! connection* command* (+ column 1)
+                          data-format* value* indicator*)
+                   (make-freetds-bound-variable
+                    value* indicator* translate-type* length name)))))))))
 
  ;; Currently this assumes a command can only return one result
- ;; (actually, it returns only the first)
+ ;; (actually it returns only the last; anything else is consumed but discarded)
  (define (consume-results-and-bind-variables connection command*)
-   (let loop ((bound-variables #f))
+   (let loop ((bound-variables #f)
+              (resultset #f))
      (let*-values (((connection*) (freetds-connection-ptr connection))
                    ((result-status result-type) (results! connection* command*)))
        (match result-status
@@ -1044,12 +1049,15 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
           (match result-type
             ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
             ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
-            ((? row-format-result?)
-             (make-bound-variables connection* command*))
-            ((? row-result?)
-             (make-bound-variables connection* command*))
+            ((or (? row-format-result?) (? row-result?))
+             (let ((bound-vars (make-bound-variables connection* command*)))
+               (loop bound-vars
+                     (consume-resultset connection* command* bound-vars))))
             ((or (? command-done?) (? command-succeed?))
-             (loop bound-variables))
+             ;; Must continue because there might be more resultsets and we
+             ;; _must_ consume END_RESULTS.  Otherwise, the connection gets
+             ;; "stuck" until the command is dropped.
+             (loop bound-variables resultset))
             (else
              (check-server-errors! result-type connection*
                                    'consume-results-and-bind-variables)
@@ -1062,12 +1070,15 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
           (let ((retcode (cancel-command! command*)))
             (match retcode
               ((? fail?)
-               (connection-close connection)
+               (connection-close connection) ; Is this neccessary?
                (freetds-error 'consume-results-and-bind-variables
                               (string-append "ct_results and ct_cancel failed, "
                                              "prompting the connection to close")
                               retcode))
               (else
+               (check-server-errors! result-type connection*
+                                     'consume-results-and-bind-variables)
+               ;; If no server errors, something's up.
                (freetds-error 'consume-results-and-bind-variables
                               "ct_results failed, cancelling command"
                               retcode)))))
@@ -1077,74 +1088,73 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
           ;; See http://lists.ibiblio.org/pipermail/freetds/2007q3/022269.html
           (check-server-errors! result-type connection*
                                 'consume-results-and-bind-variables)
-          bound-variables)
+          (values bound-variables resultset))
          (else
           (freetds-error 'consume-results-and-bind-variables
                          "ct_results returned a bizarre result status"
                          result-status))))))
 
- (define (column-name result idx)
-   (match-let (((value indicator translate-type* length . name)
-                (list-ref (freetds-result-bound-vars result) idx)))
-              name))
-
- (define (column-names result)
-   (map (lambda (bound-variable)
-          (match-let (((value indicator translate-type* length . name)
-                       bound-variable))
-                     name))
-        (freetds-result-bound-vars result)))
+ ;; It's unfortunate that we need to call list->vector, but this is neccessary
+ ;; because ct_res_info doesn't return a useful result for CS_ROW_COUNT until
+ ;; all result values have been read out, at which point we have a list already.
+ (define (consume-resultset connection* command* bound-vars)
+   (let loop ((rows '())
+              (row (row-fetch connection* command* bound-vars)))
+     (if (not row)
+         (list->vector (reverse! rows))
+         (loop (cons row rows) (row-fetch connection* command* bound-vars)))))
 
  ;; Fetch doesn't return anything useful, it fills in previously bound variables
- (define (fetch! result)
+ (define (fetch! command*)
    ((foreign-lambda CS_INT "ct_fetch"
                     (c-pointer "CS_COMMAND")
                     CS_INT CS_INT CS_INT (c-pointer "CS_INT"))
-    (freetds-result-command-ptr result) CS_UNUSED CS_UNUSED CS_UNUSED #f))
+    command* CS_UNUSED CS_UNUSED CS_UNUSED #f))
 
- (define (row-fetch result)
-   (let ((retcode (fetch! result)))
+ (define (row-fetch connection* command* bound-vars)
+   (let ((retcode (fetch! command*)))
      (match retcode
        ((? success? row-fail?)
-        (map (lambda (bound-variable)
-               (match-let (((value indicator translate-type* length . name)
-                            bound-variable))
-                          (if (null-indicator? indicator)
-                              (sql-null)
-                              (translate-type* value length))))
-             (freetds-result-bound-vars result)))
+        (map (lambda (var)
+               (if (null-indicator? (freetds-bound-variable-indicator var))
+                   (sql-null)
+                   ((freetds-bound-variable-translator var)
+                    (freetds-bound-variable-value var)
+                    (freetds-bound-variable-length var))))
+             bound-vars))
        ((? fail?)
         ;; cancel
         ;; fail again -> close
         (freetds-error 'row-fetch "fetch! returned CS_FAIL" retcode))
-       ((? end-data?)
-        ;; This is required to "empty out" the result sets.  We could skip this
-        ;; but then we are continuously canceling commands.  Not so great...
-        (consume-results-and-bind-variables
-         (freetds-result-connection result) (freetds-result-command-ptr result))
-        #f)
-       (_
+       ((? end-data?) #f)
+       (else
         (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
- ;; This could be made more efficient by putting it in row-fetch's mapped lambda
- (define (row-fetch/alist result)
-   (and-let* ((row (row-fetch result))
+ (define (column-name result #!optional (column-number 0))
+   (freetds-bound-variable-name
+    (list-ref (freetds-result-bound-vars result) column-number)))
+
+ (define (column-names result)
+   (map freetds-bound-variable-name (freetds-result-bound-vars result)))
+
+ (define (result-row result #!optional (row-number 0))
+   (vector-ref (freetds-result-rows result) row-number))
+
+ (define (result-value result #!optional (column 0) (row 0))
+   (list-ref (result-row result row) column))
+
+ (define (result-row/alist result #!optional (row-number 0))
+   (and-let* ((row (result-row result row-number))
               (names (column-names result)))
      (map cons names row)))
 
  (define (result-values result)
-   (let next ((rows (list)))
-     (let ((row (row-fetch result)))
-       (if (not row)
-           (reverse! rows)
-           (next (cons row rows))))))
+   (vector->list (freetds-result-rows result)))
 
  (define (result-values/alist result)
-   (let next ((rows (list)))
-     (let ((row (row-fetch/alist result)))
-       (if (not row)
-           (reverse! rows)
-           (next (cons row rows))))))
+   (map (lambda (row)
+          (map cons (column-names result) row))
+        (result-values result)))
 
  (define (call-with-result-set connection query . rest-args)
    ;; TODO: This is not too efficient

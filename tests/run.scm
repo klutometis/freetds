@@ -34,17 +34,27 @@
     (test "All column names can be obtained"
           '(one two three)
           (column-names res))
-    (test "First row-fetch returns one row"
+    (test "Result-row with no args returns first row"
           '(1 2 3)
-          (row-fetch res))
-    (test "Second row-fetch returns another row (alist)"
+          (result-row res))
+    (test "Result-row with arg returns that row"
+          '(4 5 6)
+          (result-row res 1))
+    (test "Result-row/alist with arg returns that row"
           '((one . 4) (two . 5) (three . 6))
-          (row-fetch/alist res))
-    (test-assert "Final row-fetch returns #f"
-                 (not (row-fetch res)))
+          (result-row/alist res 1))
+    (test "Result-value with no args returns first col&row"
+          1 (result-value res 0))
+    (test "Result-value with column arg returns col in first row"
+          3 (result-value res 2))
+    (test "Result-value with column and row arg returns proper value"
+          6 (result-value res 2 1))
     (test-assert "Cleaning up the result gives no problems"
                  (result-cleanup! res)))
-  (test "result-values retrieves all values"
+  (test "result-values returns empty list on empty result set"
+        '()
+        (result-values (send-query connection "SELECT 1 WHERE 1 = 0")))
+  (test "result-values returns all rows when result contains multiple rows"
         '((1 2 3) (4 5 6))
         (result-values
          (send-query connection (conc "SELECT 1 AS one, 2 AS two, 3 AS three"
@@ -57,11 +67,11 @@
          (send-query connection (conc "SELECT 1 AS one, 2 AS two, 3 AS three"
                                       " UNION "
                                       "SELECT 4, 5, 6"))))
-  ;; TODO: Maybe we should always fetch the entire result so this doesn't
-  ;; have to be a problem
-  (test-error "Querying before reading out the previous result gives error"
-              (begin (send-query connection "SELECT 1, 2, 3")
-                     (send-query connection "SELECT 4, 5, 6")))
+  ;; This is ok because we read in the entire result at once
+  (test "Querying before reading out the previous result works"
+        '((4 5 6))
+        (begin (send-query connection "SELECT 1, 2, 3")
+               (result-values (send-query connection "SELECT 4, 5, 6"))))
   (test "After resetting the connection, we can send queries again"
         '((7 8 9))
         (begin (connection-reset! connection)
