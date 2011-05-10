@@ -91,9 +91,16 @@
                (result-values (send-query connection "SELECT 13, 14, 15")))))
 
 (test-group "type parsing"
-  (test "String values are retrieved correctly"
+  (test "Variable-length string values are retrieved correctly"
         '(("one" "testing" ""))
         (result-values (send-query connection "SELECT 'one', 'testing', ''")))
+  (test "Fixed-length string values are retrieved correctly"
+        '(("one" "testing" " "))
+        (result-values (send-query connection
+                                   (conc "SELECT CAST('one' AS CHAR(3)),"
+                                         "       CAST('testing' AS CHAR(7)),"
+                                         ;; CHAR(0) is not allowed...
+                                         "       CAST(' ' AS CHAR(1))"))))
   (test "Integer values are retrieved correctly"
         '((0 -1 110))
         (result-values (send-query connection "SELECT 0, -1, 110")))
@@ -148,7 +155,8 @@
         (result-values (send-query connection "SELECT NULL, NULL"))))
 
 (test-group "type unparsing"
-  (test "String values are written correctly"
+  ;; See http://lists.ibiblio.org/pipermail/freetds/2009q2/024682.html
+  (test "String values are written correctly (broken in FreeTDS <= 0.82)"
         '(("one" "testing" ""))
         (result-values
          (send-query connection "SELECT ?, ?, ?" "one" "testing" "")))
