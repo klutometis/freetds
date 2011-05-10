@@ -23,9 +23,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  freetds
  (make-connection connection? connection-open? connection-close connection-reset!
   send-query send-query* result? result-cleanup!
-  result-values result-values/alist result-row result-row/alist result-value
-  column-name column-names
-  call-with-result-set call-with-connection)
+  result-value result-values result-values/alist
+  result-row result-row/alist result-column column-name column-names
+  call-with-result-set call-with-connection
+  row-map row-for-each row-fold row-fold-right
+  column-map column-for-each column-fold column-fold-right)
 
  (import scheme chicken foreign)
 
@@ -1130,6 +1132,16 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define (result-row result #!optional (row-number 0))
    (vector-ref (freetds-result-rows result) row-number))
 
+ (define (result-column result #!optional (column-number 0))
+   (let ((rows (freetds-result-rows result)))
+     (let loop ((column-values '())
+                (row-number (vector-length rows)))
+       (if (zero? row-number)
+           column-values
+           (let ((row (vector-ref rows (sub1 row-number))))
+             (loop (cons (list-ref row column-number) column-values)
+                   (sub1 row-number)))))))
+
  (define (result-value result #!optional (column 0) (row 0))
    (list-ref (result-row result row) column))
 
@@ -1156,4 +1168,78 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
            void
            (lambda () (process-result result))
            (lambda () (result-cleanup! result))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; High-level interface
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (make-result-fold item-count extract-item)
+  (lambda (kons knil result)
+   (let ((items (item-count result)))
+     (let loop ((seed knil)
+                (item 0))
+       (if (= item items)
+           seed
+           (loop (kons (extract-item result item) seed) (add1 item)))))))
+
+(define (column-count result)
+  (length (freetds-result-column-names result)))
+(define (row-count result)
+  (vector-length (freetds-result-rows result)))
+
+(define row-fold (make-result-fold row-count result-row))
+(define (row-fold* kons knil result)
+  (row-fold (lambda (values seed)
+              (apply kons (append values (list seed)))) knil result))
+
+(define column-fold (make-result-fold column-count result-column))
+(define (column-fold* kons knil result)
+  (column-fold (lambda (values seed)
+                 (apply kons (append values (list seed)))) knil result))
+
+
+(define (make-result-fold-right item-count extract-item)
+  (lambda (kons knil result)
+    (let loop ((seed knil)
+               (item (item-count result)))
+      (if (= item 0)
+          seed
+          (loop (kons (extract-item result (sub1 item)) seed) (sub1 item))))))
+
+(define row-fold-right (make-result-fold-right row-count result-row))
+(define (row-fold-right* kons knil result)
+  (row-fold-right (lambda (values seed)
+                    (apply kons (append values (list seed)))) knil result))
+
+(define column-fold-right (make-result-fold-right column-count result-column))
+(define (column-fold-right* kons knil result)
+  (column-fold-right (lambda (values seed)
+                       (apply kons (append values (list seed)))) knil result))
+
+
+(define (row-for-each proc result)
+  (row-fold (lambda (values seed) (proc values)) #f result)
+  (void))
+(define (row-for-each* proc result)
+  (row-fold (lambda (values seed) (apply proc values)) #f result)
+  (void))
+
+(define (column-for-each proc result)
+  (column-fold (lambda (values seed) (proc values)) #f result)
+  (void))
+(define (column-for-each* proc result)
+  (column-fold (lambda (values seed) (apply proc values)) #f result)
+  (void))
+
+;; Like regular Scheme map, the order in which the procedure is applied is
+;; undefined.  We make good use of that by traversing the resultset from
+;; the end back to the beginning, thereby avoiding a reverse! on the result.
+(define (row-map proc res)
+  (row-fold-right (lambda (row lst) (cons (proc row) lst)) '() res))
+(define (row-map* proc res)
+  (row-fold-right (lambda (row lst) (cons (apply proc row) lst)) '() res))
+(define (column-map proc res)
+  (column-fold-right (lambda (col lst) (cons (proc col) lst)) '() res))
+(define (column-map* proc res)
+  (column-fold-right (lambda (col lst) (cons (apply proc col) lst)) '() res))
 )

@@ -40,6 +40,12 @@
     (test "Result-row with arg returns that row"
           '(4 5 6)
           (result-row res 1))
+    (test "Result-column with no args returns first column"
+          '(1 4)
+          (result-column res))
+    (test "Result-column with arg returns that column"
+          '(3 6)
+          (result-column res 2))
     (test "Result-row/alist with arg returns that row"
           '((one . 4) (two . 5) (three . 6))
           (result-row/alist res 1))
@@ -156,6 +162,62 @@
                               result-values))
   (test-error "Error for invalid SQL"
               (send-query connection "INVALID")))
+
+(test-group "high-level interface"
+  (test "row-fold"
+        '(("one" 2)
+          ("three" 4))
+        (reverse
+         (row-fold
+          cons '()
+          (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2))))
+  (test "column-fold"
+        '(("one" "three")
+          (2 4))
+        (reverse
+         (column-fold
+          cons '()
+          (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2))))
+  (test "row-fold-right"
+        '(("one" 2)
+          ("three" 4))
+        (row-fold-right
+         cons '()
+         (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2)))
+  (test "column-fold-right"
+        '(("one" "three")
+          (2 4))
+        (column-fold-right
+         cons '()
+         (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2)))
+  (test "row-for-each"
+        '(("one" 2)
+          ("three" 4))
+        (let ((res '()))
+          (row-for-each
+           (lambda (row) (set! res (cons row res)))
+           (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2))
+          (reverse res)))
+  (test "column-for-each"
+        '(("one" "three")
+          (2 4))
+        (let ((res '()))
+          (column-for-each
+           (lambda (col) (set! res (cons col res)))
+           (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2))
+          (reverse res)))
+  (test "row-map"
+        '(("one" 2)
+          ("three" 4))
+        (row-map
+         identity
+         (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2)))
+  (test "column-map"
+        '(("one" "three")
+          (2 4))
+        (column-map
+         identity
+         (send-query connection "SELECT ?, ? UNION SELECT 'three', 4" "one" 2))))
 
 (test-end)
 
