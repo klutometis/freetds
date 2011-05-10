@@ -350,16 +350,13 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define-syntax define-type-maker
    (syntax-rules ()
-     ((_ type constructor)
+     ((_ type data-type-size constructor)
       (define (constructor #!optional (length 1))
-        (let ((type* ((foreign-lambda* (c-pointer type) ((int l))
-                                       "C_return(malloc(l*(sizeof(" type "))));")
-                      length)))
+        (let ((type* (allocate (* length data-type-size))))
           (unless type*
             (error 'constructor
                    (format "could not allocate ~a ~a(s)" length type)))
-          (set-finalizer! type* (foreign-lambda* void (((c-pointer type) t))
-                                                 "C_free(t);"))
+          (set-finalizer! type* free)
           type*)))))
 
  (define-syntax define-make-types*/datatypes
@@ -367,8 +364,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     (lambda (expression rename compare)
       `(begin . ,(map (lambda (type)
                         (let ((type-string (symbol->string type))
+                              (size (datatype->size type))
                               (constructor (datatype->make-type* type)))
-                          `(define-type-maker ,type-string ,constructor)))
+                          `(define-type-maker ,type-string ,size ,constructor)))
                       datatypes)))))
 
  (define-syntax define-datatype->make-type*/datatypes
