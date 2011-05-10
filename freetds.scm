@@ -30,9 +30,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (import scheme chicken foreign)
 
  (use lolevel srfi-1 srfi-4 data-structures
-      foreigners srfi-19 matchable foof-loop sql-null)
-
- (import-for-syntax matchable)
+      foreigners srfi-19 foof-loop sql-null)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -1041,55 +1039,52 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
               (resultset #f))
      (let*-values (((connection*) (freetds-connection-ptr connection))
                    ((result-status result-type) (results! connection* command*)))
-       (match result-status
-         ((? success?)
-          (match result-type
-            ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
-            ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
-            ((or (? row-format-result?) (? row-result?))
-             (let ((bound-vars (make-bound-variables connection* command*)))
-               (loop bound-vars
-                     (consume-resultset connection* command* bound-vars))))
-            ((or (? command-done?) (? command-succeed?))
-             ;; Must continue because there might be more resultsets and we
-             ;; _must_ consume END_RESULTS.  Otherwise, the connection gets
-             ;; "stuck" until the command is dropped.
-             (loop bound-variables resultset))
-            (else
-             (check-server-errors! result-type connection*
-                                   'consume-results-and-bind-variables)
-             ;; If no server errors, something's up.
-             ;; TODO: Maybe we need to clean up?
-             (freetds-error 'consume-results-and-bind-variables
-                            "ct_results returned a bizarre result type"
-                            result-type))))
-         ((? fail?)
-          (let ((retcode (cancel-command! command*)))
-            (match retcode
-              ((? fail?)
-               (connection-close connection) ; Is this neccessary?
-               (freetds-error 'consume-results-and-bind-variables
-                              (string-append "ct_results and ct_cancel failed, "
-                                             "prompting the connection to close")
-                              retcode))
-              (else
-               (check-server-errors! result-type connection*
-                                     'consume-results-and-bind-variables)
-               ;; If no server errors, something's up.
-               (freetds-error 'consume-results-and-bind-variables
-                              "ct_results failed, cancelling command"
-                              retcode)))))
-         ((? end-results?)
-          ;; This is here to work around a bug in FreeTDS (0.82); in some cases,
-          ;; it returns no error code when an invalid query was sent.
-          ;; See http://lists.ibiblio.org/pipermail/freetds/2007q3/022269.html
-          (check-server-errors! result-type connection*
-                                'consume-results-and-bind-variables)
-          (values bound-variables resultset))
-         (else
-          (freetds-error 'consume-results-and-bind-variables
-                         "ct_results returned a bizarre result status"
-                         result-status))))))
+       (cond
+        ((success? result-status)
+         ;; need to deal with CS_ROW_RESULT, CS_END_RESULTS; and
+         ;; possibly CS_CMD_SUCCEED, CS_CMD_FAIL, ...
+         (cond ((or (row-format-result? result-type) (row-result? result-type))
+                (let ((bound-vars (make-bound-variables connection* command*)))
+                  (loop bound-vars
+                        (consume-resultset connection* command* bound-vars))))
+               ((or (command-done? result-type) (command-succeed? result-type))
+                ;; Must continue because there might be more resultsets and we
+                ;; _must_ consume END_RESULTS.  Otherwise, the connection gets
+                ;; "stuck" until the command is dropped.
+                (loop bound-variables resultset))
+               (else
+                (check-server-errors! result-type connection*
+                                      'consume-results-and-bind-variables)
+                ;; If no server errors, something's up.
+                ;; TODO: Maybe we need to clean up?
+                (freetds-error 'consume-results-and-bind-variables
+                               "ct_results returned a bizarre result type"
+                               result-type))))
+        ((fail? result-status)
+         (let ((retcode (cancel-command! command*)))
+           (cond ((fail? retcode)
+                  (connection-close connection) ; Is this neccessary?
+                  (freetds-error 'consume-results-and-bind-variables
+                                 (conc "ct_results and ct_cancel failed, "
+                                       "prompting the connection to close")
+                                 retcode))
+            (else (check-server-errors! result-type connection*
+                                        'consume-results-and-bind-variables)
+                  ;; If no server errors, something's up.
+                  (freetds-error 'consume-results-and-bind-variables
+                                 "ct_results failed, cancelling command"
+                                 retcode)))))
+        ((end-results? result-status)
+         ;; This is here to work around a bug in FreeTDS (0.82); in some cases,
+         ;; it returns no error code when an invalid query was sent.
+         ;; See http://lists.ibiblio.org/pipermail/freetds/2007q3/022269.html
+         (check-server-errors! result-type connection*
+                               'consume-results-and-bind-variables)
+         (values bound-variables resultset))
+        (else
+         (freetds-error 'consume-results-and-bind-variables
+                        "ct_results returned a bizarre result status"
+                        result-status))))))
 
  ;; It's unfortunate that we need to call list->vector, but this is neccessary
  ;; because ct_res_info doesn't return a useful result for CS_ROW_COUNT until
@@ -1110,22 +1105,22 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define (row-fetch connection* command* bound-vars)
    (let ((retcode (fetch! command*)))
-     (match retcode
-       ((? success? row-fail?)
-        (map (lambda (var)
-               (if (null-indicator? (freetds-bound-variable-indicator var))
-                   (sql-null)
-                   ((freetds-bound-variable-translator var)
-                    (freetds-bound-variable-value var)
-                    (freetds-bound-variable-length var))))
-             bound-vars))
-       ((? fail?)
-        ;; cancel
-        ;; fail again -> close
-        (freetds-error 'row-fetch "fetch! returned CS_FAIL" retcode))
-       ((? end-data?) #f)
-       (else
-        (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
+     (cond ((or (success? retcode)
+                (row-fail? retcode))
+            (map (lambda (var)
+                   (if (null-indicator? (freetds-bound-variable-indicator var))
+                       (sql-null)
+                       ((freetds-bound-variable-translator var)
+                        (freetds-bound-variable-value var)
+                        (freetds-bound-variable-length var))))
+                 bound-vars))
+           ((fail? retcode)
+            ;; cancel
+            ;; fail again -> close
+            (freetds-error 'row-fetch "fetch! returned CS_FAIL" retcode))
+           ((end-data? retcode) #f)
+           (else
+            (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
  (define (column-name result #!optional (column-number 0))
    (freetds-bound-variable-name
