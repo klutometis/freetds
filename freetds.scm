@@ -78,27 +78,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;;;; Custom types and FreeTDS<->Scheme type conversion
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
- (define-syntax define-type-maker
-   (syntax-rules ()
-     ((_ type constructor)
-      (define (constructor #!optional (length 1))
-        (let ((type* ((foreign-lambda* (c-pointer type) ((int l))
-                                       "C_return(malloc(l*(sizeof(" type "))));")
-                      length)))
-          (when (null-pointer? type*)
-            (error 'constructor
-                   (format "could not allocate ~a ~a(s)" length type)))
-          (set-finalizer! type* (foreign-lambda* void (((c-pointer type) t))
-                                                 "C_free(t);"))
-          type*)))))
-
- (define-syntax define-make-type*
-   (er-macro-transformer
-    (lambda (expression rename compare)
-      (let* ((type (symbol->string (cadr expression)))
-             (constructor (string->symbol (sprintf "make-~a*" type))))
-        `(define-type-maker ,type ,constructor)))))
-
  (define-foreign-record-type
    (CS_DATAFMT CS_DATAFMT)
    (constructor: make-CS_DATAFMT*)
@@ -146,40 +125,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (CS_CHAR scale numeric-scale)
    ;; 33 = CS_MAX_NUMLEN
    (CS_CHAR (array 33) numeric-array))
-
- (define-for-syntax datatypes
-   '(CS_BINARY
-     CS_LONGBINARY
-     CS_VARBINARY
-     CS_BIT
-     CS_CHAR
-     CS_LONGCHAR
-     CS_VARCHAR
-     CS_DATETIME
-     CS_DATETIME4
-     CS_TINYINT
-     CS_SMALLINT
-     CS_INT
-     CS_BIGINT
-     CS_DECIMAL
-     CS_NUMERIC
-     CS_FLOAT
-     CS_REAL
-     CS_MONEY
-     CS_MONEY4
-     CS_TEXT
-     CS_IMAGE))
-
- (define-syntax define-make-types*/datatypes
-   (er-macro-transformer
-    (lambda (expression rename compare)
-      (let ((%define-make-type* (rename 'define-make-type*))
-            (%begin (rename 'begin)))
-        (cons
-         %begin
-         (map (lambda (type)
-                `(,%define-make-type* ,type))
-              datatypes))))))
 
  (define (char-null? char)
    (char=? char #\nul))
@@ -368,6 +313,29 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (CS_CHAR*->string text* length))
  (define translate-CS_IMAGE* translate-CS_TEXT*)
 
+ (define-for-syntax datatypes
+   '(CS_BINARY
+     CS_LONGBINARY
+     CS_VARBINARY
+     CS_BIT
+     CS_CHAR
+     CS_LONGCHAR
+     CS_VARCHAR
+     CS_DATETIME
+     CS_DATETIME4
+     CS_TINYINT
+     CS_SMALLINT
+     CS_INT
+     CS_BIGINT
+     CS_DECIMAL
+     CS_NUMERIC
+     CS_FLOAT
+     CS_REAL
+     CS_MONEY
+     CS_MONEY4
+     CS_TEXT
+     CS_IMAGE))
+
  (define-for-syntax (datatype->integer datatype)
    `(foreign-value ,(format "~a_TYPE" datatype) CS_INT))
 
@@ -379,6 +347,29 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
 
  (define-for-syntax (datatype->translate-type* datatype)
    (string->symbol (format "translate-~a*" datatype)))
+
+ (define-syntax define-type-maker
+   (syntax-rules ()
+     ((_ type constructor)
+      (define (constructor #!optional (length 1))
+        (let ((type* ((foreign-lambda* (c-pointer type) ((int l))
+                                       "C_return(malloc(l*(sizeof(" type "))));")
+                      length)))
+          (when (null-pointer? type*)
+            (error 'constructor
+                   (format "could not allocate ~a ~a(s)" length type)))
+          (set-finalizer! type* (foreign-lambda* void (((c-pointer type) t))
+                                                 "C_free(t);"))
+          type*)))))
+
+ (define-syntax define-make-types*/datatypes
+   (er-macro-transformer
+    (lambda (expression rename compare)
+      `(begin . ,(map (lambda (type)
+                        (let ((type-string (symbol->string type))
+                              (constructor (datatype->make-type* type)))
+                          `(define-type-maker ,type-string ,constructor)))
+                      datatypes)))))
 
  (define-syntax define-datatype->make-type*/datatypes
    (er-macro-transformer
@@ -886,9 +877,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (error-on-non-success
     #f
     (lambda ()
-      ((foreign-lambda CS_RETCODE
-                       "ct_cmd_drop"
-                       (c-pointer "CS_COMMAND"))
+      ((foreign-lambda CS_RETCODE "ct_cmd_drop" (c-pointer "CS_COMMAND"))
        command*))
     'ct_cmd_drop
     "failed to drop command"))
