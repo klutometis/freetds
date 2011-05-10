@@ -32,7 +32,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (import scheme chicken foreign)
 
  (use lolevel srfi-1 srfi-4 data-structures
-      foreigners srfi-19 foof-loop sql-null)
+      foreigners srfi-19 sql-null numbers)
 
  (foreign-declare "#include <ctpublic.h>")
 
@@ -264,8 +264,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define (translate-CS_BIGINT* bigint* length)
    (CS_INT*->number bigint* "CS_BIGINT" integer64))
  (define (cardinality integer base)
-   (loop ((for power (up-from 0))
-          (until (> (expt base power) integer))) => power))
+   (do ((power 0 (add1 power)))
+       ((> (expt base power) integer) power)))
  (define (translate-CS_NUMERIC* numeric* length)
    (let ((maximum-number-length (foreign-value "CS_MAX_NUMLEN" int)))
      (let ((positive? (zero? (char->integer (numeric-array numeric* 0))))
@@ -301,11 +301,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      "C_return((float) *n);")
     real*))
  (define (translate-CS_MONEY* money* length)
-   (inexact->exact
-    (+ (* (money-high money*) (expt 2 32))
-       (money-low money*))))
+   (/ (+ (* (money-high money*) (expt 2 32))
+         (money-low money*))
+      10000.0))
  (define (translate-CS_MONEY4* small-money* length)
-   (small-money-value small-money*))
+   (/ (small-money-value small-money*) 10000.0))
  (define (translate-CS_TEXT* text* length)
    (CS_CHAR*->string text* length))
  (define translate-CS_IMAGE* translate-CS_TEXT*)

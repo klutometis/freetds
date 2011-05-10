@@ -1,5 +1,8 @@
 (use test freetds sql-null srfi-19)
 
+;; TODO: (use numbers) and add some tests with bignums
+;;       or even ratnums (if those are used anywhere...?)
+
 (include "test-freetds-secret.scm")
 
 (test-begin "FreeTDS")
@@ -113,6 +116,23 @@
                      (conc "SELECT CAST(0.0 AS REAL), CAST(-1.5 AS REAL), "
                            "       CAST(256.0 AS REAL), CAST(257.0 AS REAL), "
                            "       CAST(0.125 AS REAL), CAST(110.0625 AS REAL)"))))
+  ;; The following two have no reverse (Scheme->SQL) mapping
+  (test "Money values are retrieved correctly (as floats)"
+        '((0.0 -1.5 256.0 257.0 0.125 110.0625))
+        (result-values
+         (send-query connection
+                     (conc "SELECT $0.0, $-1.5, $256.0, $257.0, $0.125, "
+                           "       $110.0625"))))
+  (test "Small money values are retrieved correctly (as floats)"
+        '((0.0 -1.5 256.0 257.0 0.125 110.0625))
+        (result-values
+         (send-query connection
+                     (conc "SELECT CAST($0.0 AS SMALLMONEY), "
+                           "       CAST($-1.5 AS SMALLMONEY),"
+                           "       CAST($256.0 AS SMALLMONEY), "
+                           "       CAST($257.0 AS SMALLMONEY), "
+                           "       CAST($0.125 AS SMALLMONEY), "
+                           "       CAST($110.0625 AS SMALLMONEY)"))))
   (test "Datetime values are retrieved correctly"
         ;; TODO: Figure out how to make this thing use timezones
         `((,(make-date 0  0  0  0 1 1 2000 0)
