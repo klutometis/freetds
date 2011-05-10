@@ -41,6 +41,12 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define-foreign-type CS_UINT unsigned-integer32)
  (define-foreign-type CS_SMALLINT short)
  (define-foreign-type CS_RETCODE CS_INT)
+ ;; Not really necessary; ctlib doesn't consistently use this type either
+ (define-foreign-type CS_BOOL CS_INT)
+
+ (define CS_UNUSED (foreign-value "CS_UNUSED" CS_INT))
+ (define CS_TRUE   (foreign-value "CS_TRUE"   CS_BOOL))
+ (define CS_FALSE  (foreign-value "CS_FALSE"  CS_BOOL))
 
 ;; Create a global application context upon library load.  Contexts
 ;; aren't really used for anything, except a couple of properties and
@@ -654,12 +660,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      ;;       It could make the API more Schemely by getting rid of the need to
      ;;       pass foreign property values, so we can use it from the REPL.
      (cond ((string? value)   (set-prop! value (string-length value)))
-           ((boolean? value)  (set-prop! (if value
-                                             (foreign-value "CS_TRUE" CS_INT)
-                                             (foreign-value "CS_FALSE" CS_INT))
-                                         (foreign-value "CS_UNUSED" CS_INT)))
-           ((fixnum? value)   (set-prop! value
-                                         (foreign-value "CS_UNUSED" CS_INT)))
+           ((boolean? value)  (set-prop! (if value CS_TRUE CS_FALSE) CS_UNUSED))
+           ((fixnum? value)   (set-prop! value CS_UNUSED))
            #;((u8vector? value) (set-prop! value (u8vector-length value)))
            #;((blob? value)     (set-prop! value (blob-size value)))
            (else (error "Unrecognized property value type" property value)))))
@@ -728,10 +730,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        "ct_close"
                        (c-pointer "CS_CONNECTION")
                        CS_INT)
-       connection*
        ;; TODO: CS_FORCE_CLOSE might be necessary in some cases. Perhaps try
        ;; graceful disconnect first, and force it only if that fails?
-       (foreign-value "CS_UNUSED" CS_INT)))
+       connection* CS_UNUSED))
     'connection-close
     "failed to close connection"))
 
@@ -902,7 +903,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                command*
                (foreign-value "CS_LANG_CMD" CS_INT)
                query
-               (foreign-value "CS_UNUSED" CS_INT))
+               CS_UNUSED)
      (for-each (lambda (p) (add-param! connection command* p)) parameters)
      (send! command* connection)
      ;; TODO: Memory leak when send! or add-param! fails
@@ -967,16 +968,24 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
             (retcode (results command* (location rettype))))
        (values retcode rettype))))
 
- (define (results-info-column-count! command*)
-   (with-retcode-check retcode #f (results-info-column-count! "failed to fetch column count")
-     (let-location ((colcnt int))
-       ((foreign-lambda* void (((c-pointer "CS_COMMAND") cmd)
-                               ((c-pointer int) colcnt)
-                               ((c-pointer int) retcode))
-                         "*retcode = ct_res_info(cmd, CS_NUMDATA, colcnt, "
-                         "                       CS_UNUSED, NULL);")
-        command* (location colcnt) (location retcode))
-       (values retcode colcnt))))
+ ;; Limited to integer types
+ ;; (ie, not to be used for CS_BROWSE_INFO, CS_MSGTYPE, CS_ORDERBY_COLS)
+ (define (results-info connection* command* type)
+   (let-location ((result int))
+     (error-on-non-success
+      connection*
+      (lambda ()
+        ((foreign-lambda CS_RETCODE
+                         "ct_res_info"
+                         (c-pointer "CS_COMMAND")
+                         CS_INT
+                         (c-pointer "CS_VOID")
+                         CS_INT
+                         (c-pointer int))
+         command* type (location result) CS_UNUSED #f))
+      'ct_res_info
+      "Could not fetch result information")
+     result))
 
  (define (describe! connection* command* item data-format*)
    (error-on-non-success
@@ -1018,45 +1027,45 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
              (lp (add1 idx)))))))
 
  (define (make-bound-variables connection* command*)
-   (let-values (((retcode column-count) (results-info-column-count! command*)))
-     (list-tabulate
-      column-count
-      (lambda (column)
-        (let ((data-format* (make-CS_DATAFMT*)))
-          ;; This shouldn't really be necessary
-          (set-finalizer! data-format* free-CS_DATAFMT*)
-          (describe! connection* command* (add1 column) data-format*)
-          ;; let's have a table here for modifying,
-          ;; if necessary, the data-format*.
-          (let ((datatype (data-format-datatype data-format*)))
-            (select datatype
-                    (((foreign-value "CS_CHAR_TYPE" CS_INT)
-                      (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
-                      (foreign-value "CS_TEXT_TYPE" CS_INT)
-                      (foreign-value "CS_VARCHAR_TYPE" CS_INT)
-                      (foreign-value "CS_BINARY_TYPE" CS_INT)
-                      (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
-                      (foreign-value "CS_VARBINARY_TYPE" CS_INT)
-                      (foreign-value "CS_DATETIME_TYPE" CS_INT)
-                      (foreign-value "CS_DATETIME4_TYPE" CS_INT))
-                     (data-format-format-set!
-                      data-format*
-                      (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
-            (let ((make-type* (alist-ref datatype datatype->make-type*))
-                  (type-size (alist-ref datatype datatype->type-size))
-                  (translate-type* (alist-ref datatype datatype->translate-type*)))
-              (unless (and make-type* type-size translate-type*)
-                (error "Encountered an unknown datatype in result set!" datatype))
-              (let* ((length (inexact->exact
-                              (ceiling
-                               (/ (data-format-max-length data-format*)
-                                  type-size))))
-                     (value* (make-type* length))
-                     (indicator* (make-CS_SMALLINT* 1))
-                     (name (name-from-data-format data-format*)))
-                (if (bind! connection* command* (+ column 1)
-                           data-format* value* indicator*)
-                    (cons* value* indicator* translate-type* length name))))))))))
+   (list-tabulate
+    ;; Fetch number of columns
+    (results-info connection* command* (foreign-value "CS_NUMDATA" CS_INT))
+    (lambda (column)
+      (let ((data-format* (make-CS_DATAFMT*)))
+        ;; This shouldn't really be necessary
+        (set-finalizer! data-format* free-CS_DATAFMT*)
+        (describe! connection* command* (add1 column) data-format*)
+        ;; let's have a table here for modifying,
+        ;; if necessary, the data-format*.
+        (let ((datatype (data-format-datatype data-format*)))
+          (select datatype
+                  (((foreign-value "CS_CHAR_TYPE" CS_INT)
+                    (foreign-value "CS_LONGCHAR_TYPE" CS_INT) 
+                    (foreign-value "CS_TEXT_TYPE" CS_INT)
+                    (foreign-value "CS_VARCHAR_TYPE" CS_INT)
+                    (foreign-value "CS_BINARY_TYPE" CS_INT)
+                    (foreign-value "CS_LONGBINARY_TYPE" CS_INT)
+                    (foreign-value "CS_VARBINARY_TYPE" CS_INT)
+                    (foreign-value "CS_DATETIME_TYPE" CS_INT)
+                    (foreign-value "CS_DATETIME4_TYPE" CS_INT))
+                   (data-format-format-set!
+                    data-format*
+                    (foreign-value "CS_FMT_PADNULL" CS_INT)))) 
+          (let ((make-type* (alist-ref datatype datatype->make-type*))
+                (type-size (alist-ref datatype datatype->type-size))
+                (translate-type* (alist-ref datatype datatype->translate-type*)))
+            (unless (and make-type* type-size translate-type*)
+              (error "Encountered an unknown datatype in result set!" datatype))
+            (let* ((length (inexact->exact
+                            (ceiling
+                             (/ (data-format-max-length data-format*)
+                                type-size))))
+                   (value* (make-type* length))
+                   (indicator* (make-CS_SMALLINT* 1))
+                   (name (name-from-data-format data-format*)))
+              (if (bind! connection* command* (+ column 1)
+                         data-format* value* indicator*)
+                  (cons* value* indicator* translate-type* length name)))))))))
 
  ;; Currently this assumes a command can only return one result
  ;; (actually, it returns only the first)
@@ -1108,18 +1117,6 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                          "ct_results returned a bizarre result status"
                          result-status))))))
 
- (define (fetch! result)
-   (let-location ((retcode CS_INT))
-     (let* ((fetch* (foreign-lambda* CS_INT (((c-pointer "CS_COMMAND") cmd)
-                                             ((c-pointer int) res))
-                                     "int rows_read;"
-                                     "*res = ct_fetch(cmd, CS_UNUSED, CS_UNUSED,"
-                                     "                CS_UNUSED, &rows_read);"
-                                     "C_return(rows_read);"))
-            (rows-read (fetch* (freetds-result-command-ptr result)
-                               (location retcode))))
-       (values rows-read retcode))))
-
  (define (column-name result idx)
    (match-let (((value indicator translate-type* length . name)
                 (list-ref (freetds-result-bound-vars result) idx)))
@@ -1132,8 +1129,15 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                      name))
         (freetds-result-bound-vars result)))
 
+ ;; Fetch doesn't return anything useful, it fills in previously bound variables
+ (define (fetch! result)
+   ((foreign-lambda CS_INT "ct_fetch"
+                    (c-pointer "CS_COMMAND")
+                    CS_INT CS_INT CS_INT (c-pointer "CS_INT"))
+    (freetds-result-command-ptr result) CS_UNUSED CS_UNUSED CS_UNUSED #f))
+
  (define (row-fetch result)
-   (let-values (((rows-read retcode) (fetch! result)))
+   (let ((retcode (fetch! result)))
      (match retcode
        ((? success? row-fail?)
         (map (lambda (bound-variable)
