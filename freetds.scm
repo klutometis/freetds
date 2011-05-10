@@ -355,7 +355,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
         (let ((type* ((foreign-lambda* (c-pointer type) ((int l))
                                        "C_return(malloc(l*(sizeof(" type "))));")
                       length)))
-          (when (null-pointer? type*)
+          (unless type*
             (error 'constructor
                    (format "could not allocate ~a ~a(s)" length type)))
           (set-finalizer! type* (foreign-lambda* void (((c-pointer type) t))
