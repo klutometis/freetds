@@ -872,7 +872,8 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      ;; TODO: Memory leak when send! or add-param! fails
      (receive (bound-vars rows)
        (consume-results-and-bind-variables connection command*)
-       (let ((result (make-freetds-result command* bound-vars rows)))
+       (let* ((column-names (map freetds-bound-variable-name bound-vars))
+              (result (make-freetds-result command* column-names rows)))
          (set-finalizer! result result-cleanup!)
          result))))
 
@@ -902,20 +903,19 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;;;; Result processing
  ;;;;;;;;;;;;;;;;;;;;;;;;;
 
- (define-record freetds-result command-ptr bound-vars rows)
+ (define-record freetds-result command-ptr column-names rows)
  (define result? freetds-result?)
 
  (define (cancel-command! cmd*)
    (cancel* #f cmd* (foreign-value "CS_CANCEL_ALL" CS_INT)))
 
  (define (result-cleanup! result)
-   (and-let* ((command* (freetds-result-command-ptr result))
-              (bound-vars (freetds-result-bound-vars result)))
+   (and-let* ((command* (freetds-result-command-ptr result)))
      (cancel-command! command*)
      (drop-command! command*)
-     (freetds-result-rows-set! result #f)
      (freetds-result-command-ptr-set! result #f)
-     (freetds-result-bound-vars-set! result #f))
+     (freetds-result-column-names-set! result #f)
+     (freetds-result-rows-set! result #f))
    (void))
 
  ;; The results returned by ct_results are not complete result sets,
@@ -1123,11 +1123,9 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
             (freetds-error 'row-fetch "fetch! returned unknown retcode" retcode)))))
 
  (define (column-name result #!optional (column-number 0))
-   (freetds-bound-variable-name
-    (list-ref (freetds-result-bound-vars result) column-number)))
+   (list-ref (freetds-result-column-names result) column-number))
 
- (define (column-names result)
-   (map freetds-bound-variable-name (freetds-result-bound-vars result)))
+ (define column-names freetds-result-column-names)
 
  (define (result-row result #!optional (row-number 0))
    (vector-ref (freetds-result-rows result) row-number))
