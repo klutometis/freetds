@@ -197,13 +197,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
        ((exn) (sql-null)))))
 
  (define-syntax CS_INT*->number
-   (er-macro-transformer
-    (lambda (expression rename compare)
-      (match-let (((_ int* type return-type) expression))
-        (let ((%foreign-safe-lambda*
-               (rename 'foreign-safe-lambda*)))
-          `((,%foreign-safe-lambda* ,return-type (((c-pointer ,type) i))
-                                    "C_return((int) *i);") ,int*))))))
+   (syntax-rules ()
+     ((_ int* type return-type)
+      ((foreign-safe-lambda* return-type (((c-pointer type) i))
+                             "C_return((int) *i);") int*))))
 
  (define (CS_BINARY*->vector binary* length)
    (let ((vector (make-u8vector length 0)))
