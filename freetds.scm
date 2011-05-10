@@ -78,55 +78,26 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;;;; Custom types and FreeTDS<->Scheme type conversion
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+ (define-syntax define-type-maker
+   (syntax-rules ()
+     ((_ type constructor)
+      (define (constructor #!optional (length 1))
+        (let ((type* ((foreign-lambda* (c-pointer type) ((int l))
+                                       "C_return(malloc(l*(sizeof(" type "))));")
+                      length)))
+          (when (null-pointer? type*)
+            (error 'constructor
+                   (format "could not allocate ~a ~a(s)" length type)))
+          (set-finalizer! type* (foreign-lambda* void (((c-pointer type) t))
+                                                 "C_free(t);"))
+          type*)))))
+
  (define-syntax define-make-type*
    (er-macro-transformer
     (lambda (expression rename compare)
-      (let* ((type (cadr expression))
-             (make-type (string->symbol (sprintf "make-~a*" type)))
-             (%let (rename 'let))
-             (%define (rename 'define))
-             (%case-lambda (rename 'case-lambda))
-             (%foreign-lambda* (rename 'foreign-lambda*))
-             (%null-pointer? (rename 'null-pointer?))
-             (%signal (rename 'signal))
-             (%make-property-condition (rename 'make-property-condition))
-             (%length (rename 'length))
-             (%type* (rename 'type*))
-             (%let (rename 'let))
-             (%if (rename 'if))
-             (%format (rename 'format))
-             (%symbol->string (rename 'symbol->string))
-             (%type (rename 'type))
-             (%set-finalizer! (rename 'set-finalizer!))
-             (%lambda (rename 'lambda))
-             (%begin (rename 'begin))
-             (%free (rename 'free)))
-        `(,%define ,make-type
-           (,%case-lambda
-            (()
-             (,make-type 1))
-            ((,%length)
-             (,%let ((,%type*
-                      ((,%foreign-lambda*
-                        (c-pointer ,(symbol->string type))
-                        ((int length))
-                        ,(sprintf "C_return(malloc(length * (sizeof(~a))));" type))
-                       ,%length)))
-                    (,%if (,%null-pointer? ,%type*)
-                          (,%signal
-                           (,%make-property-condition
-                            'exn
-                            'location ',make-type
-                            'message (,%format "could not allocate ~a ~a(s)"
-                                               ,%length
-                                               ',type))))
-                    (,%set-finalizer!
-                     ,%type*
-                     (,%foreign-lambda*
-                      void
-                      (((c-pointer ,(symbol->string type)) type))
-                      "C_free(type);"))
-                    ,%type*))))))))
+      (let* ((type (symbol->string (cadr expression)))
+             (constructor (string->symbol (sprintf "make-~a*" type))))
+        `(define-type-maker ,type ,constructor)))))
 
  (define-foreign-record-type
    (CS_DATAFMT CS_DATAFMT)
@@ -430,8 +401,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
     (lambda (expression rename compare)
       (let ((%define (rename 'define))
             (%quasiquote (rename 'quasiquote))
-            (%unquote (rename 'unquote))
-            (%foreign-value (rename 'foreign-value)))
+            (%unquote (rename 'unquote)))
         `(,%define datatype->type-size
                    (,%quasiquote
                     ,(map (lambda (type)
