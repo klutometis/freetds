@@ -26,8 +26,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
   result-value result-values result-values/alist
   result-row result-row/alist result-column column-name column-names
   call-with-result-set call-with-connection
-  row-map row-for-each row-fold row-fold-right
-  column-map column-for-each column-fold column-fold-right)
+  row-map row-map* row-for-each row-for-each*
+  row-fold row-fold* row-fold-right row-fold-right*
+  column-map column-map* column-for-each column-for-each*
+  column-fold column-fold* column-fold-right column-fold-right*)
 
  (import scheme chicken foreign)
 
