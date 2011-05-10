@@ -359,6 +359,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
           (set-finalizer! type* free)
           type*)))))
 
+ ;; Create a make-FOO* for every FOO in the datatypes list.
  (define-syntax define-make-types*/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -369,6 +370,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                           `(define-type-maker ,type-string ,size ,constructor)))
                       datatypes)))))
 
+ (define-make-types*/datatypes)         ; Run immediately
+
+ ;; Create an alist mapping of datatype integer value to datatype constructor.
+ ;; So you'd get `((8 . ,make-CS_INT*) (9 . ,make-CS_REAL*) ...) where 8 is the
+ ;; constant value of CS_INT_TYPE, 9 is the constant value of CS_REAL, etc.
  (define-syntax define-datatype->make-type*/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -382,9 +388,11 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                   `(,%unquote ,(datatype->make-type* type))))
                           datatypes)))))))
 
- ;; Create a alist mapping of datatype integer values and byte sizes
- ;; So you'd get ((8 . 2) (9 . 2)) where 8 is the constant value of CS_INT_TYPE,
- ;; 9 is the constant value of CS_REAL, etc.
+ (define-datatype->make-type*/datatypes) ; Run immediately
+
+ ;; Create a alist mapping of datatype integer values to datatype byte sizes.
+ ;; So you'd get '((8 . 2) (9 . 2) ...) where 8 is the constant value of
+ ;; CS_INT_TYPE, 9 is the constant value of CS_REAL, etc.
  (define-syntax define-datatype->type-size/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -398,6 +406,10 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                   `(,%unquote ,(datatype->size type))))
                           datatypes)))))))
 
+ (define-datatype->type-size/datatypes) ; Run immediately
+
+ ;; Create a alist mapping of datatype integer values to translater procedures.
+ ;; So you'd get `((8 . ,translate-CS_INT*) (9 . ,translate-CS_REAL*) ...)
  (define-syntax define-datatype->translate-type*/datatypes
    (er-macro-transformer
     (lambda (expression rename compare)
@@ -411,10 +423,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                                   `(,%unquote ,(datatype->translate-type* type))))
                           datatypes)))))))
 
- (define-make-types*/datatypes)
- (define-datatype->make-type*/datatypes)
- (define-datatype->type-size/datatypes)
- (define-datatype->translate-type*/datatypes)
+ (define-datatype->translate-type*/datatypes) ; Run immediately
 
  (define (freetds-error location message retcode . arguments)
    (signal (make-composite-condition
