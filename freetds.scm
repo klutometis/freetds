@@ -876,7 +876,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
      ;; TODO: Memory leak when send! or add-param! fails
      (receive (bound-vars rows)
        (consume-results-and-bind-variables connection command*)
-       (let* ((column-names (map freetds-bound-variable-name bound-vars))
+       (let* ((column-names (and bound-vars (map freetds-bound-variable-name bound-vars)))
               (result (make-freetds-result command* column-names rows)))
          (set-finalizer! result result-cleanup!)
          result))))
