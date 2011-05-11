@@ -1,7 +1,7 @@
 ((egg "freetds.egg")
  (license "LGPL-3")
  (category databases)
- (needs setup-helper autocompile srfi-19 foreigners numbers sql-null)
+ (needs setup-helper srfi-19 foreigners numbers sql-null)
  (test-depends test)
  (author "Peter Danenberg"
          "Peter Bex")
