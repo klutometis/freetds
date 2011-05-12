@@ -5,5 +5,5 @@
 
 (setup-shared-extension-module
  'freetds
- (extension-version 0.1)
+ (extension-version 0.1.1)
  compile-options: '(-lct))
