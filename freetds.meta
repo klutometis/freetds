@@ -6,9 +6,4 @@
  (author "Peter Danenberg"
          "Peter Bex")
  (synopsis "Bindings for FreeTDS")
- (files "freetds.scm"
-        "freetds.setup"
-	"freetds.meta"
-	"tests/test-freetds-secret-default.scm"
-	"tests/stress-test.scm"
-	"tests/run.scm"))
+ (files "COPYING" "COPYING.LESSER" "TODO" "freetds.meta" "freetds.release-info" "freetds.scm" "freetds.setup" "tests/run.scm" "tests/stress-test.scm" "tests/test-freetds-secret-default.scm"))
