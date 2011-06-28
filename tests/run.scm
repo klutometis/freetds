@@ -22,7 +22,7 @@
                 (not (connection-open? conn)))))
 
 ;; From now on, just keep using the same connection
-(define connection (make-connection server username password))
+(define connection (make-connection server username password database))
 
 (test-group "low-level query & results interface"
   (let ((res (send-query connection

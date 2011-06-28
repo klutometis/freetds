@@ -1039,7 +1039,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  ;; Currently this assumes a command can only return one result
  ;; (actually it returns only the last; anything else is consumed but discarded)
  (define (consume-results-and-bind-variables connection command*)
-   (let loop ((bound-variables #f)
+   (let loop ((bound-variables '())
               (resultset #f))
      (let*-values (((connection*) (freetds-connection-ptr connection))
                    ((result-status result-type) (results! connection* command*)))
