@@ -134,7 +134,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
  (define char-vector->string
    (case-lambda
     ((char-vector char-ref)
-     (char-vector->string char-ref +inf))
+     (char-vector->string char-ref +inf.0))
     ((char-vector char-ref max-length)
      (define (chars->string chars)
        (reverse-list->string chars))
@@ -151,7 +151,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
                        (- length 1)))))))))
  (define CS_CHAR*->string
    (case-lambda
-    ((vector) (CS_CHAR*->string vector +inf))
+    ((vector) (CS_CHAR*->string vector +inf.0))
     ((vector max-length)
      (char-vector->string
       vector
