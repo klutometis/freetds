@@ -601,7 +601,7 @@ with the FreeTDS egg.  If not, see <http://www.gnu.org/licenses/>.
    (let ((set-prop! (lambda (buf len)
                       (connection-property (freetds-connection-ptr connection)
                                            (foreign-value "CS_SET" CS_INT)
-                                           property buf len (null-pointer)))))
+                                           property buf len #f))))
      ;; Readonly: CS_CHARSETCNV, CS_CON_STATUS, CS_EED_CMD, CS_ENDPOINT,
      ;;           CS_LOGIN_STATUS, CS_NOTIF_CMD, CS_PARENT_HANDLE,
      ;;           CS_SERVERNAME,
