@@ -1,5 +1,5 @@
 ;;; -*- Hen -*-
-(include "setup-helper")
+(use setup-helper-mod)
 
 (verify-extension-name "freetds")
 
